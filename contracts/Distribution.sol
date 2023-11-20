@@ -252,20 +252,20 @@ contract Distribution is Ownable, ReentrancyGuard {
    */
   function deposit(uint256 amount) external isActive havePendingClaim nonReentrant {
 
-    // Checks if the current contract is whitelisted or not in order to receive payments without fee exception
-    // If the contract is not whitelisted, then the transaction fee will be deducted from the amount being deposited
-    bool isContractWhitelisted = _isContractWhitelisted();
-    if (!isContractWhitelisted) {
-      uint256 transactionFee = _getTokenTransferFee(amount);
-      amount -= transactionFee;
-    }
-
     // Here the amount after fee exemption is beeing validated 
     require(amount > 0, 'LINGO: Amount cannot be zero');
 
     address sender = _msgSender();
     uint256 allowance = _token.allowance(sender, address(this));
     require(allowance >= amount, 'LINGO: Insufficient allowance');
+
+    // Based on the contract balance update, determine the amount has been deposited
+    uint256 contractCurrentBalance = _token.balanceOf(address(this));
+    bool txnStatus = _token.transferFrom(sender, address(this), amount);
+    require(txnStatus, 'LINGO: Token transfer failed');
+    uint256 contractUpdatedBalance = _token.balanceOf(address(this));
+
+    uint256 depositedAmount = contractUpdatedBalance - contractCurrentBalance;
 
     User storage userDetails = _users[sender];
 
@@ -287,7 +287,7 @@ contract Distribution is Ownable, ReentrancyGuard {
       : 0;
 
     /// Add deposited amount to the user's balance.
-    userDetails.balance += amount;
+    userDetails.balance += depositedAmount;
     /// Calculate forecasted credits for the user based on the updated balance.
     userDetails.forecastedCredits +=
       userDetails.balance *
@@ -298,14 +298,10 @@ contract Distribution is Ownable, ReentrancyGuard {
     /// Add the new forecasted credits to the total credits.
     _totalCredits += userDetails.forecastedCredits;
     /// Add deposited amount to the total amount.
-    _totalAmount += amount;
-
-
-    bool txnStatus = _token.transferFrom(sender, address(this), amount);
-    require(txnStatus, 'LINGO: Token transfer failed');
+    _totalAmount += depositedAmount;
 
     /// Emit deposit event with user's address and deposited amount.
-    emit Deposit(sender, amount);
+    emit Deposit(sender, depositedAmount);
   }
 
   /**

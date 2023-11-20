@@ -1815,22 +1815,16 @@ describe('Distribution Contract', () => {
           .to.emit(distributionContract, 'Deposit')
           .withArgs(user1.address, user1expectedAmountAfterFee1);
 
-      // skipTime(BN(15 * 24).mul(BN(3600)).toNumber());
+      const userStats = await distributionContract.getUserStatus(user1.address);
 
-      // await expect(distributionContract.connect(user1).withdraw(user1expectedAmountAfterFee1))
-      // .to.emit(distributionContract, 'Withdraw')
-      // .withArgs(user1.address, user1expectedAmountAfterFee1);
+      skipTime(BN(15 * 24).mul(BN(3600)).toNumber());
 
-      // const user1statsAfterWithdraw = await distributionContract.getUserStatus(user1.address);
-      // expect(user1statsAfterWithdraw.balance.eq(BN(0))).is.true;
+      await expect(distributionContract.connect(user1).withdraw(userStats.balance))
+      .to.emit(distributionContract, 'Withdraw')
+      .withArgs(user1.address, userStats.balance);
 
-      // skipTime(SLOT_BN.mul(BN(3600)).toNumber());
-
-      // const distributeAmountBN = BN(10000).mul(BN(10).pow(DECIMALS_BN));
-      //   await distribute(distributionContract, token, distributeAmountBN);
-
-      // await distributionContract.connect(user1).claimRewards()
-
+      const user1statsAfterWithdraw = await distributionContract.getUserStatus(user1.address);
+      expect(user1statsAfterWithdraw.balance.eq(BN(0))).is.true;
       
     });
 
