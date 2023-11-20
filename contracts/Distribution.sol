@@ -164,12 +164,13 @@ contract Distribution is Ownable, ReentrancyGuard {
     require(treasuryWallet != address(0), 'LINGO: Zero Address');
 
     _token = IERC20(tokenAddress);
-    _slot = slot;
+    _updateSlot(slot);
+    _updateAdminClaimPeriod(adminClaimPeriod);
+    _setTreasuryWalletAddress(treasuryWallet);
+    _setWithdrawalFee(fee);
+
     _currentSlotStart = block.timestamp / 3600;
     _currentSlotEnd = _currentSlotStart + _slot;
-    _adminClaimPeriod = adminClaimPeriod;
-    _treasuryWallet = treasuryWallet;
-    setWithdrawalFee(fee);
 
     _transferOwnership(admin);
   }
@@ -215,10 +216,18 @@ contract Distribution is Ownable, ReentrancyGuard {
   }
 
   /**
-   * @dev Sets the treasury wallet address to a new value.
+   * @dev Sets the treasury wallet address to a new value, access restricted to the owner.
    * @param account The new address for the treasury wallet.
    */
   function setTreasuryWalletAddress(address account) external onlyOwner {
+    _setTreasuryWalletAddress(account);
+  }
+
+  /**
+   * @dev Sets the treasury wallet address to a new value.
+   * @param account The new address for the treasury wallet.
+   */
+  function _setTreasuryWalletAddress(address account) internal {
     /// The treasury wallet address cannot be set to the zero-address.
     require(account != address(0), 'LINGO: Zero Address');
     _treasuryWallet = account;
@@ -227,10 +236,18 @@ contract Distribution is Ownable, ReentrancyGuard {
   }
 
   /**
-   * @dev Updates the slot number to a new value.
+   * @dev Updates the slot number to a new value, access restricted to owner.
    * @param newSlot The new value for the slot.
    */
   function updateSlot(uint256 newSlot) external onlyOwner {
+    _updateSlot(newSlot);
+  }
+
+  /**
+   * @dev Updates the slot number to a new value.
+   * @param newSlot The new value for the slot.
+   */
+  function _updateSlot(uint256 newSlot) internal {
     require(newSlot > 0, 'LINGO: Slot cannot be zero');
     _slot = newSlot;
     /// Emits an event when `_slot` is updated using this function.
@@ -238,10 +255,18 @@ contract Distribution is Ownable, ReentrancyGuard {
   }
 
   /**
-   * @dev Updates the admin claim period to a new value.
+   * @dev Updates the admin claim period to a new value, access restricted to owner.
    * @param newAdminClaimPeriod The new value for the admin claim period.
    */
   function updateAdminClaimPeriod(uint256 newAdminClaimPeriod) external onlyOwner {
+    _updateAdminClaimPeriod(newAdminClaimPeriod);
+  }
+
+  /**
+   * @dev Updates the admin claim period to a new value.
+   * @param newAdminClaimPeriod The new value for the admin claim period.
+   */
+  function _updateAdminClaimPeriod(uint256 newAdminClaimPeriod) internal {
     _adminClaimPeriod = newAdminClaimPeriod;
     /// Emits an event when `_adminClaimPeriod` is updated using this function.
     emit AdminClaimPeriodUpdated(_adminClaimPeriod);
@@ -580,7 +605,7 @@ contract Distribution is Ownable, ReentrancyGuard {
   }
 
   /**
-   * @dev Sets the withdrawal fee charged on withdrawals from the contract.
+   * @dev Sets the withdrawal fee charged on withdrawals from the contract. access restricted to owner.
    *
    * Requirements:
    * - Only callable by the owner of the contract.
@@ -588,7 +613,20 @@ contract Distribution is Ownable, ReentrancyGuard {
    *
    * @param fee An unsigned integer representing the percentage fee charged on withdrawals from the contract.
    */
-  function setWithdrawalFee(uint256 fee) public onlyOwner {
+  function setWithdrawalFee(uint256 fee) external onlyOwner {
+    _setWithdrawalFee(fee);
+  }
+
+  /**
+   * @dev Sets the withdrawal fee charged on withdrawals from the contract. access restricted to owner.
+   *
+   * Requirements:
+   * - Only callable by the owner of the contract.
+   * - `fee` must be less than or equal to 5%.
+   *
+   * @param fee An unsigned integer representing the percentage fee charged on withdrawals from the contract.
+   */
+  function _setWithdrawalFee(uint256 fee) internal {
     require(fee <= 500, 'LINGO: Withdrawal Fee should be between 0% - 5%');
     _withdrawalFee = fee;
     /// Emitted when `fee` is updated using this function.
