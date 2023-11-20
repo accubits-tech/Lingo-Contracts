@@ -267,38 +267,37 @@ contract Distribution is Ownable, ReentrancyGuard {
 
     uint256 depositedAmount = contractUpdatedBalance - contractCurrentBalance;
 
-    User storage userDetails = _users[sender];
+    User memory userDetailsTemp = _users[sender];
 
     /// If user is depositing for the first time or there was no credit or balance present
     ///  set their last claimed timestamp.
-    if (userDetails.forecastedCredits == 0 && userDetails.balance == 0) {
+    if (userDetailsTemp.forecastedCredits == 0 && userDetailsTemp.balance == 0) {
       if(!_isUser[sender] ) {
         _isUser[sender] = true;
         _userAddresses.push(sender);
       }
-      userDetails.lastClaimedTimestamp = block.timestamp / 3600;
+      userDetailsTemp.lastClaimedTimestamp = block.timestamp / 3600;
     }
 
-    /// Subtract the forecasted credits from the total credits before updating the forecasted credits.
-    _totalCredits -= _totalCredits > 0 ? userDetails.forecastedCredits : 0;
-    /// Update forecasted credits by decreasing old value and adding new earned credits.
-    userDetails.forecastedCredits -= userDetails.forecastedCredits > 0
-      ? userDetails.balance * (_currentSlotEnd - block.timestamp / 3600)
-      : 0;
-
+    // Calculate added credits credits
+    uint256 addedCredits = depositedAmount * (_currentSlotEnd - block.timestamp / 3600);
+    // Update user forcasted credits
+    userDetailsTemp.forecastedCredits += addedCredits;
+    // update total forcasted credits
+    _totalCredits += addedCredits;
     /// Add deposited amount to the user's balance.
-    userDetails.balance += depositedAmount;
-    /// Calculate forecasted credits for the user based on the updated balance.
-    userDetails.forecastedCredits +=
-      userDetails.balance *
-      (_currentSlotEnd - block.timestamp / 3600);
-    /// Update last updated timestamp to current hour.
-    userDetails.lastUpdatedTimestamp = block.timestamp / 3600;
+    userDetailsTemp.balance += depositedAmount;
 
-    /// Add the new forecasted credits to the total credits.
-    _totalCredits += userDetails.forecastedCredits;
+    /// Update last updated timestamp to current hour.
+    userDetailsTemp.lastUpdatedTimestamp = block.timestamp / 3600;
+
+    // /// Add the new forecasted credits to the total credits.
+    // _totalCredits += userDetailsTemp.forecastedCredits;
     /// Add deposited amount to the total amount.
     _totalAmount += depositedAmount;
+
+    // Store the updated user details in the mapping.
+    _users[sender] = userDetailsTemp;
 
     /// Emit deposit event with user's address and deposited amount.
     emit Deposit(sender, depositedAmount);
@@ -313,31 +312,27 @@ contract Distribution is Ownable, ReentrancyGuard {
     require(amount > 0, 'LINGO: Amount cannot be zero');
 
     address sender = _msgSender();
-    User storage userDetails = _users[sender];
+    User storage userDetailsTemp = _users[sender];
 
-    require(userDetails.balance >= amount, 'LINGO: Insufficient balance');
+    require(userDetailsTemp.balance >= amount, 'LINGO: Insufficient balance');
 
-    /// Subtract forecasted credits from total credits before updating the forecasted credits for user.
-    _totalCredits -= userDetails.forecastedCredits;
-
-    /// Update user's forecasted credits after withdrawal.
-    userDetails.forecastedCredits -=
-      userDetails.balance *
-      (_currentSlotEnd - block.timestamp / 3600);
-
+    // Calculate the lost credits
+    uint256 lostCredits = amount * (_currentSlotEnd - block.timestamp / 3600);
+    // Update user forcasted credits
+    userDetailsTemp.forecastedCredits -= lostCredits;
+    // update total forcasted credits
+    _totalCredits -= lostCredits;
     /// Deduct the withdrawn amount from user's balance.
-    userDetails.balance -= amount;
-    /// Calculate new forecasted credits based on updated balance.
-    userDetails.forecastedCredits +=
-      userDetails.balance *
-      (_currentSlotEnd - block.timestamp / 3600);
-    /// Update last updated timestamp to current hour.
-    userDetails.lastUpdatedTimestamp = block.timestamp / 3600;
+    userDetailsTemp.balance -= amount;
 
-    /// Add the new forecasted credits to the total credits.
-    _totalCredits += userDetails.forecastedCredits;
+    /// Update last updated timestamp to current hour.
+    userDetailsTemp.lastUpdatedTimestamp = block.timestamp / 3600;
+
     /// Deduct withdrawn amount from total amount.
     _totalAmount -= amount;
+
+    // Store the updated user details in the mapping.
+    _users[sender] = userDetailsTemp;
 
     uint256 fee = (amount * _withdrawalFee) / 10000;
 
@@ -397,10 +392,10 @@ contract Distribution is Ownable, ReentrancyGuard {
    */
   function claimRewards() external isUser isActive nonReentrant {
     address sender = _msgSender();
-    User storage userDetails = _users[sender];
+    User memory userDetailsTemp = _users[sender];
 
     /// Ensure that the user has not already claimed rewards for the current slot.
-    require(_currentSlotStart > userDetails.lastClaimedTimestamp, 'LINGO: Already claimed');
+    require(_currentSlotStart > userDetailsTemp.lastClaimedTimestamp, 'LINGO: Already claimed');
 
     uint256 totalClaim = 0;
     uint256 credits = 0;
@@ -410,14 +405,14 @@ contract Distribution is Ownable, ReentrancyGuard {
     if (
       _distributionHistory.length == 1 ||
       (_distributionHistory.length > 1 &&
-        (userDetails.lastClaimedTimestamp >=
+        (userDetailsTemp.lastClaimedTimestamp >=
           _distributionHistory[_distributionHistory.length - 1].startTime))
     ) {
       if (
         _distributionHistory[_distributionHistory.length - 1].totalCredits > 0 &&
         _distributionHistory[_distributionHistory.length - 1].remainingTokensToClaim > 0
         ) {
-        credits = userDetails.forecastedCredits;
+        credits = userDetailsTemp.forecastedCredits;
         claim =
           (credits * _distributionHistory[_distributionHistory.length - 1].monthlyProfit) /
           _distributionHistory[_distributionHistory.length - 1].totalCredits;
@@ -430,18 +425,18 @@ contract Distribution is Ownable, ReentrancyGuard {
       //Calculate claim for all slots till last claimed timestamp by user.
       for (uint256 i = 0; i < _distributionHistory.length; i++) {
         if (
-          _distributionHistory[i].endTime >= userDetails.lastClaimedTimestamp &&
+          _distributionHistory[i].endTime >= userDetailsTemp.lastClaimedTimestamp &&
           _distributionHistory[i].totalCredits > 0 &&
           _distributionHistory[i].remainingTokensToClaim > 0
         ) {
           credits = 0;
           claim = 0;
           /// Calculate credits obtained by the user in the current distribution history slot.
-          if (_distributionHistory[i].startTime <= userDetails.lastClaimedTimestamp) {
-            credits = userDetails.forecastedCredits;
+          if (_distributionHistory[i].startTime <= userDetailsTemp.lastClaimedTimestamp) {
+            credits = userDetailsTemp.forecastedCredits;
           } else {
             credits =
-              userDetails.balance *
+              userDetailsTemp.balance *
               (_distributionHistory[i].endTime - _distributionHistory[i].startTime);
           }
           /// Calculate user's claim for the current distribution history slot.
@@ -460,10 +455,13 @@ contract Distribution is Ownable, ReentrancyGuard {
     require(totalClaim > 0, 'LINGO: Zero rewards');
 
     /// Update user and global forecasted credits based on the current slot end time.
-    userDetails.forecastedCredits = userDetails.balance * (_currentSlotEnd - _currentSlotStart);
+    userDetailsTemp.forecastedCredits = userDetailsTemp.balance * (_currentSlotEnd - _currentSlotStart);
 
     /// Update last claimed timestamp for the user.
-    userDetails.lastClaimedTimestamp = block.timestamp / 3600;
+    userDetailsTemp.lastClaimedTimestamp = block.timestamp / 3600;
+
+    // Store the updated user details in the mapping.
+    _users[sender] = userDetailsTemp;
 
     /// Transfer tokens to the user account.
     bool txnStatus = _transferTokens(sender, totalClaim);
