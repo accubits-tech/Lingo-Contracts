@@ -138,11 +138,12 @@ contract LINGO is ERC20, ERC20Burnable, Ownable {
   function removeFromWhiteList(
     WhiteListTypes whiteListType,
     address[] memory users
-  ) external onlyOwner {
+  ) external onlyOwner returns (bool isUserRemoved){
+
     if (whiteListType == WhiteListTypes.EXTERNAL_WHITELISTED) {
-      _removeFromExternalWhiteList(users);
+      isUserRemoved = _removeFromExternalWhiteList(users);
     } else if (whiteListType == WhiteListTypes.INTERNAL_WHITELISTED) {
-      _removeFromInternalWhiteList(users);
+      isUserRemoved =  _removeFromInternalWhiteList(users);
     }
   }
 
@@ -296,13 +297,15 @@ contract LINGO is ERC20, ERC20Burnable, Ownable {
    *
    * @param users Array of addresses to remove from the whitelist
    */
-  function _removeFromInternalWhiteList(address[] memory users) internal onlyOwner {
-    bool removed = false;
+  function _removeFromInternalWhiteList(address[] memory users) internal onlyOwner returns(bool){
+    bool isRemoved = true;
     for (uint i = 0; i < users.length; i++) {
-      /// Check if address is already removed from whitelist
-      if (!_isInternalWhiteListed[users[i]]) continue;
+      /// Check if the address is present in the whitelist
+      if (!_isInternalWhiteListed[users[i]]) {
+        isRemoved = false;
+        continue;
+      }
 
-      removed = false;
       for (uint j = 0; j < _internalWhitelistedAddresses.length; j++) {
         if (users[i] == _internalWhitelistedAddresses[j]) {
           _isInternalWhiteListed[users[i]] = false;
@@ -312,13 +315,12 @@ contract LINGO is ERC20, ERC20Burnable, Ownable {
             _internalWhitelistedAddresses.length - 1
           ];
           _internalWhitelistedAddresses.pop();
-
-          removed = true;
           break;
         }
       }
     }
-    if (removed) emit WhiteListUpdated(WhiteListTypes.INTERNAL_WHITELISTED, false, users);
+    if (isRemoved) emit WhiteListUpdated(WhiteListTypes.INTERNAL_WHITELISTED, false, users);
+    return isRemoved;
   }
 
   /**
@@ -327,13 +329,15 @@ contract LINGO is ERC20, ERC20Burnable, Ownable {
    *
    * @param users Array of addresses to remove from the whitelist
    */
-  function _removeFromExternalWhiteList(address[] memory users) internal onlyOwner {
-    bool removed = false;
+  function _removeFromExternalWhiteList(address[] memory users) internal onlyOwner returns(bool){
+    bool isRemoved = true;
     for (uint i = 0; i < users.length; i++) {
-      /// Check if address is already removed from whitelist
-      if (!_isExternalWhiteListed[users[i]]) continue;
+      /// Check if the address is present in the whitelist
+      if (!_isExternalWhiteListed[users[i]]) {
+        isRemoved = false;
+        continue;
+      }
 
-      removed = false;
       for (uint j = 0; j < _externalWhitelistedAddresses.length; j++) {
         if (users[i] == _externalWhitelistedAddresses[j]) {
           _isExternalWhiteListed[users[i]] = false;
@@ -343,13 +347,12 @@ contract LINGO is ERC20, ERC20Burnable, Ownable {
             _externalWhitelistedAddresses.length - 1
           ];
           _externalWhitelistedAddresses.pop();
-
-          removed = true;
           break;
         }
       }
     }
-    if (removed) emit WhiteListUpdated(WhiteListTypes.EXTERNAL_WHITELISTED, false, users);
+    if (isRemoved) emit WhiteListUpdated(WhiteListTypes.EXTERNAL_WHITELISTED, false, users);
+    return isRemoved;
   }
 
   /**

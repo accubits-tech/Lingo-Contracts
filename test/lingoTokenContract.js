@@ -396,6 +396,20 @@ describe('LINGO Token', () => {
       expect(await token.isInternalWhiteListed(user1.address)).to.be.false;
     });
 
+    it('Returns proper removal status', async () => {
+      await token.addToWhiteList(0, [user1.address]);
+      expect(await token.isExternalWhiteListed(user1.address)).to.be.true;
+      expect(await token.callStatic.removeFromWhiteList(0, [user1.address])).to.be.true;
+      expect(await token.callStatic.removeFromWhiteList(0, [user2.address])).to.be.false;
+      expect(await token.callStatic.removeFromWhiteList(0, [user1.address, user2.address])).to.be.false;
+
+      await token.addToWhiteList(1, [user1.address]);
+      expect(await token.isInternalWhiteListed(user1.address)).to.be.true;
+      expect(await token.callStatic.removeFromWhiteList(1, [user1.address])).to.be.true;
+      expect(await token.callStatic.removeFromWhiteList(1, [user2.address])).to.be.false;
+      expect(await token.callStatic.removeFromWhiteList(1, [user1.address, user2.address])).to.be.false;
+    });
+
     it('Users can check an account is whitelisted or not', async () => {
       expect(await token.isExternalWhiteListed(user1.address)).to.be.false;
       await token.addToWhiteList(0, [user1.address]);
