@@ -3,7 +3,7 @@
  */
 pragma solidity 0.8.18;
 
-import './Lingo.sol';
+import {IERC20, SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import '@openzeppelin/contracts/access/Ownable.sol';
 import '@openzeppelin/contracts/security/ReentrancyGuard.sol';
 
@@ -47,7 +47,8 @@ contract Distribution is Ownable, ReentrancyGuard {
   }
 
   /// The ERC20 token used to stake.
-  LINGO private immutable _token;
+  IERC20 private immutable _token;
+  using SafeERC20 for IERC20;
 
   /// Stores the distribution period in hours.
   uint256 private _slot;
@@ -162,7 +163,7 @@ contract Distribution is Ownable, ReentrancyGuard {
   ) {
     require(treasuryWallet != address(0), 'LINGO: Zero Address');
 
-    _token = LINGO(tokenAddress);
+    _token = IERC20(tokenAddress);
     _slot = slot;
     _currentSlotStart = block.timestamp / 3600;
     _currentSlotEnd = _currentSlotStart + _slot;
@@ -261,8 +262,8 @@ contract Distribution is Ownable, ReentrancyGuard {
 
     // Based on the contract balance update, determine the amount has been deposited
     uint256 contractCurrentBalance = _token.balanceOf(address(this));
-    bool txnStatus = _token.transferFrom(sender, address(this), amount);
-    require(txnStatus, 'LINGO: Token transfer failed');
+    _token.safeTransferFrom(sender, address(this), amount);
+
     uint256 contractUpdatedBalance = _token.balanceOf(address(this));
 
     uint256 depositedAmount = contractUpdatedBalance - contractCurrentBalance;
@@ -337,12 +338,10 @@ contract Distribution is Ownable, ReentrancyGuard {
     uint256 fee = (amount * _withdrawalFee) / 10000;
 
     /// Transfer the withdrawal fee to the treasury wallet.
-    bool feeCollectionStatus = _transferTokens(_treasuryWallet, fee);
-    require(feeCollectionStatus, 'LINGO: Fee collection failed');
+    _transferTokens(_treasuryWallet, fee);
 
     /// Transfer the withdrawn amount after deducting the withdrawal fee.
-    bool txnStatus = _transferTokens(sender, amount - fee);
-    require(txnStatus, 'LINGO: Token transfer failed');
+    _transferTokens(sender, amount - fee);
 
     /// Emit withdraw event with user's address and withdrawn amount.
     emit Withdraw(sender, amount);
@@ -382,8 +381,7 @@ contract Distribution is Ownable, ReentrancyGuard {
     /// Emit distribute event with the distributed amount.
     emit Distribute(amount);
 
-    bool txnStatus = _token.transferFrom(owner(), address(this), amount);
-    require(txnStatus, 'LINGO: Token transfer failed');
+    _token.safeTransferFrom(owner(), address(this), amount);
   }
 
   /**
@@ -464,8 +462,7 @@ contract Distribution is Ownable, ReentrancyGuard {
     _users[sender] = userDetailsTemp;
 
     /// Transfer tokens to the user account.
-    bool txnStatus = _transferTokens(sender, totalClaim);
-    require(txnStatus, 'LINGO: Token transfer failed');
+    _transferTokens(sender, totalClaim);
 
     /// Emit claim event with the claimed amount.
     emit Claim(sender, totalClaim);
@@ -492,8 +489,7 @@ contract Distribution is Ownable, ReentrancyGuard {
     require(totalClaim > 0, 'LINGO: Zero tokens available to claim');
 
     /// Transfers the claimed tokens to the owner's address.
-    bool txnStatus = _transferTokens(owner(), totalClaim);
-    require(txnStatus, 'LINGO: Failed to transfer claimed tokens');
+    _transferTokens(owner(), totalClaim);
 
     /// Emits an event indicating that the owner has successfully claimed some tokens.
     emit AdminClaim(owner(), totalClaim);
@@ -609,36 +605,8 @@ contract Distribution is Ownable, ReentrancyGuard {
    *
    * @param to The Ethereum address of the account that will receive tokens from the contract.
    * @param amount An unsigned integer representing the amount of tokens to transfer to `to`.
-   * @return A boolean indicating whether or not the token transfer was successful.
    */
-  function _transferTokens(address to, uint256 amount) internal returns (bool) {
-    bool txnStatus = _token.transfer(to, amount);
-    return txnStatus;
-  }
-
-  /**
-   * @dev     To check weather the current contract is whitelisted in Lingo token contract
-   * Requirements:
-   * - `_token` must be a valid LINGO smart contract.
-   *
-   * @return  bool  A boolean, true if the contract is whitelisted, false otherwise.
-   */
-  function _isContractWhitelisted() internal view returns (bool) {
-    bool isExternalWhiteListed =  _token.isExternalWhiteListed(address(this));
-    bool isInternalWhiteListed = _token.isInternalWhiteListed(address(this));
-
-    return isExternalWhiteListed || isInternalWhiteListed;
-  }
-
-  
-  /**
-   * @dev     Calculate token transer fee for the given amount.
-   * @param   amount  An unsigned integer representing the amount of tokens transferring into the contract.
-   * @return  uint256  An unsigned integer representing the token transfer fee for the given amount.
-   */
-  function _getTokenTransferFee(uint256 amount) internal view returns (uint256) {
-    uint256 feePercentage = _token.getTransferFee();
-    uint256 feeAmount = (amount * feePercentage) / 10000;
-    return feeAmount;
+  function _transferTokens(address to, uint256 amount) internal{
+    _token.safeTransfer(to, amount);
   }
 } 
