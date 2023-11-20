@@ -1322,6 +1322,36 @@ describe('Distribution Contract', () => {
           'Ownable: caller is not the owner'
         );
       });
+
+      it('Users Should be able to claim and withdraw after an admin claim', async () => {
+        const amountBN = BN(100).mul(BN(10).pow(DECIMALS_BN));
+        await deposit(distributionContract, token, user1, amountBN);
+        await skipTime(SLOT_BN.mul(BN(3600)).add(BN(3600)).toNumber());
+        const distributeAmountBN = BN(10000).mul(BN(10).pow(DECIMALS_BN));
+        await distribute(distributionContract, token, distributeAmountBN);
+        const adminClaimPeriod = await distributionContract.getAdminClaimPeriod();
+
+        await skipTime(adminClaimPeriod.mul(BN(3600)).toNumber());
+        await distributionContract.adminClaim();
+        
+        await distribute(distributionContract, token, distributeAmountBN);
+        await distribute(distributionContract, token, distributeAmountBN);
+        await distribute(distributionContract, token, distributeAmountBN);
+        await distribute(distributionContract, token, distributeAmountBN);
+        await distribute(distributionContract, token, distributeAmountBN);
+        await distribute(distributionContract, token, distributeAmountBN);
+        await distribute(distributionContract, token, distributeAmountBN);
+        await distribute(distributionContract, token, distributeAmountBN);
+        await distribute(distributionContract, token, distributeAmountBN);
+        await distribute(distributionContract, token, distributeAmountBN);
+        await distribute(distributionContract, token, distributeAmountBN);
+
+        // user should be able to claim and withdraw
+        await expect(distributionContract.connect(user1).claimRewards());
+        const userStats = await distributionContract.getUserStatus(user1.address);
+        await distributionContract.connect(user1).withdraw(userStats.balance)
+        
+      });
     });
   
     describe('Random', () => {

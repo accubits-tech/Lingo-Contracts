@@ -417,7 +417,10 @@ contract Distribution is Ownable, ReentrancyGuard {
         (userDetails.lastClaimedTimestamp >=
           _distributionHistory[_distributionHistory.length - 1].startTime))
     ) {
-      if (_distributionHistory[_distributionHistory.length - 1].totalCredits > 0) {
+      if (
+        _distributionHistory[_distributionHistory.length - 1].totalCredits > 0 &&
+        _distributionHistory[_distributionHistory.length - 1].remainingTokensToClaim > 0
+        ) {
         credits = userDetails.forecastedCredits;
         claim =
           (credits * _distributionHistory[_distributionHistory.length - 1].monthlyProfit) /
@@ -432,7 +435,8 @@ contract Distribution is Ownable, ReentrancyGuard {
       for (uint256 i = 0; i < _distributionHistory.length; i++) {
         if (
           _distributionHistory[i].endTime >= userDetails.lastClaimedTimestamp &&
-          _distributionHistory[i].totalCredits > 0
+          _distributionHistory[i].totalCredits > 0 &&
+          _distributionHistory[i].remainingTokensToClaim > 0
         ) {
           credits = 0;
           claim = 0;
