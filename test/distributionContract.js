@@ -1345,6 +1345,7 @@ describe('Distribution Contract', () => {
         await distribute(distributionContract, token, distributeAmountBN);
         await distribute(distributionContract, token, distributeAmountBN);
         await distribute(distributionContract, token, distributeAmountBN);
+        await distribute(distributionContract, token, distributeAmountBN);
 
         // user should be able to claim and withdraw
         await expect(distributionContract.connect(user1).claimRewards());
