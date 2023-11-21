@@ -46,6 +46,17 @@ contract Distribution is Ownable, ReentrancyGuard {
     uint256 remainingTokensToClaim;
   }
 
+  // constants
+
+  // Representing 5% as 500
+  uint256 private constant FIVE_PERCENT = 500;
+
+  // Divisor for percentage calculation (10000 represents two decimal places)
+  uint256 private constant PERCENTAGE_DIVISOR = 10000;
+
+  // Number of seconds in an hour
+  uint256 public constant SECONDS_IN_AN_HOUR = 3600;
+
   /// The ERC20 token used to stake.
   IERC20 private immutable _token;
   using SafeERC20 for IERC20;
@@ -169,7 +180,7 @@ contract Distribution is Ownable, ReentrancyGuard {
     _setTreasuryWalletAddress(treasuryWallet);
     _setWithdrawalFee(fee);
 
-    _currentSlotStart = block.timestamp / 3600;
+    _currentSlotStart = block.timestamp / SECONDS_IN_AN_HOUR;
     _currentSlotEnd = _currentSlotStart + _slot;
 
     _transferOwnership(admin);
@@ -189,7 +200,7 @@ contract Distribution is Ownable, ReentrancyGuard {
 
   modifier isActive() {
     require(
-      (block.timestamp / 3600) <= _currentSlotEnd && (block.timestamp / 3600) >= _currentSlotStart,
+      (block.timestamp / SECONDS_IN_AN_HOUR) <= _currentSlotEnd && (block.timestamp / SECONDS_IN_AN_HOUR) >= _currentSlotStart,
       'LINGO: Distribution is on hold. Please contact admin'
     );
     _;
@@ -302,11 +313,11 @@ contract Distribution is Ownable, ReentrancyGuard {
         _isUser[sender] = true;
         _userAddresses.push(sender);
       }
-      userDetailsTemp.lastClaimedTimestamp = block.timestamp / 3600;
+      userDetailsTemp.lastClaimedTimestamp = block.timestamp / SECONDS_IN_AN_HOUR;
     }
 
     // Calculate added credits credits
-    uint256 addedCredits = depositedAmount * (_currentSlotEnd - block.timestamp / 3600);
+    uint256 addedCredits = depositedAmount * (_currentSlotEnd - block.timestamp / SECONDS_IN_AN_HOUR);
     // Update user forcasted credits
     userDetailsTemp.forecastedCredits += addedCredits;
     // update total forcasted credits
@@ -315,7 +326,7 @@ contract Distribution is Ownable, ReentrancyGuard {
     userDetailsTemp.balance += depositedAmount;
 
     /// Update last updated timestamp to current hour.
-    userDetailsTemp.lastUpdatedTimestamp = block.timestamp / 3600;
+    userDetailsTemp.lastUpdatedTimestamp = block.timestamp / SECONDS_IN_AN_HOUR;
 
     // /// Add the new forecasted credits to the total credits.
     // _totalCredits += userDetailsTemp.forecastedCredits;
@@ -343,7 +354,7 @@ contract Distribution is Ownable, ReentrancyGuard {
     require(userDetailsTemp.balance >= amount, 'LINGO: Insufficient balance');
 
     // Calculate the lost credits
-    uint256 lostCredits = amount * (_currentSlotEnd - block.timestamp / 3600);
+    uint256 lostCredits = amount * (_currentSlotEnd - block.timestamp / SECONDS_IN_AN_HOUR);
     // Update user forcasted credits
     userDetailsTemp.forecastedCredits -= lostCredits;
     // update total forcasted credits
@@ -352,7 +363,7 @@ contract Distribution is Ownable, ReentrancyGuard {
     userDetailsTemp.balance -= amount;
 
     /// Update last updated timestamp to current hour.
-    userDetailsTemp.lastUpdatedTimestamp = block.timestamp / 3600;
+    userDetailsTemp.lastUpdatedTimestamp = block.timestamp / SECONDS_IN_AN_HOUR;
 
     /// Deduct withdrawn amount from total amount.
     _totalAmount -= amount;
@@ -360,7 +371,7 @@ contract Distribution is Ownable, ReentrancyGuard {
     // Store the updated user details in the mapping.
     _users[sender] = userDetailsTemp;
 
-    uint256 fee = (amount * _withdrawalFee) / 10000;
+    uint256 fee = (amount * _withdrawalFee) / PERCENTAGE_DIVISOR;
 
     /// Transfer the withdrawal fee to the treasury wallet.
     _transferTokens(_treasuryWallet, fee);
@@ -380,7 +391,7 @@ contract Distribution is Ownable, ReentrancyGuard {
   function distribute(uint256 amount) external onlyOwner {
     require(amount > 0, 'LINGO: Amount cannot be zero');
     /// Check if the previous slot has expired before distributing tokens for the new slot.
-    require(_currentSlotEnd <= (block.timestamp / 3600), 'LINGO: Current slot is active');
+    require(_currentSlotEnd <= (block.timestamp / SECONDS_IN_AN_HOUR), 'LINGO: Current slot is active');
 
     uint256 allowance = _token.allowance(owner(), address(this));
     /// Ensure that the contract has sufficient token allowance from the owner.
@@ -481,7 +492,7 @@ contract Distribution is Ownable, ReentrancyGuard {
     userDetailsTemp.forecastedCredits = userDetailsTemp.balance * (_currentSlotEnd - _currentSlotStart);
 
     /// Update last claimed timestamp for the user.
-    userDetailsTemp.lastClaimedTimestamp = block.timestamp / 3600;
+    userDetailsTemp.lastClaimedTimestamp = block.timestamp / SECONDS_IN_AN_HOUR;
 
     // Store the updated user details in the mapping.
     _users[sender] = userDetailsTemp;
@@ -504,7 +515,7 @@ contract Distribution is Ownable, ReentrancyGuard {
 
     /// Calculates the total amount of tokens that can be claimed by the owner.
     for (uint256 i = 0; i < _distributionHistory.length; i++) {
-      if (((block.timestamp / 3600) - _distributionHistory[i].endTime) >= _adminClaimPeriod) {
+      if (((block.timestamp / SECONDS_IN_AN_HOUR) - _distributionHistory[i].endTime) >= _adminClaimPeriod) {
         totalClaim += _distributionHistory[i].remainingTokensToClaim;
         _distributionHistory[i].remainingTokensToClaim = 0;
       }
@@ -627,7 +638,7 @@ contract Distribution is Ownable, ReentrancyGuard {
    * @param fee An unsigned integer representing the percentage fee charged on withdrawals from the contract.
    */
   function _setWithdrawalFee(uint256 fee) internal {
-    require(fee <= 500, 'LINGO: Withdrawal Fee should be between 0% - 5%');
+    require(fee <= FIVE_PERCENT, 'LINGO: Withdrawal Fee should be between 0% - 5%');
     _withdrawalFee = fee;
     /// Emitted when `fee` is updated using this function.
     emit WithdrawalFeeUpdated(fee);

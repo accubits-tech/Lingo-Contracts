@@ -21,6 +21,15 @@ contract LINGO is ERC20Burnable, Ownable {
     INTERNAL_WHITELISTED
   }
 
+  // Constants
+
+  // Representing 5% as 500
+  uint256 private constant FIVE_PERCENT = 500;
+
+  // Divisor for percentage calculation (10000 represents two decimal places)
+  uint256 private constant PERCENTAGE_DIVISOR = 10000;
+
+
   /// This is an unsigned integer that represents the transfer fee percentage
   /// Eg: 5% will be represented as 500
   uint256 private _transferFee;
@@ -213,7 +222,7 @@ contract LINGO is ERC20Burnable, Ownable {
    */
   function setTransferFee(uint256 fee) public onlyOwner {
     /// Require the fee to be less than or equal to 5%.
-    require(fee <= 500, 'LINGO: Transfer Fee should be between 0% - 5%');
+    require(fee <= FIVE_PERCENT, 'LINGO: Transfer Fee should be between 0% - 5%');
     _transferFee = fee;
     /// Emitted when `fee` is updated using this function.
     emit TransferFeeUpdated(fee);
@@ -228,7 +237,7 @@ contract LINGO is ERC20Burnable, Ownable {
   function transfer(address to, uint256 amount) public virtual override returns (bool) {
     address sender = _msgSender();
     if (_isFeeRequired(sender, to)) {
-      uint256 fee = (amount * _transferFee) / 10000;
+      uint256 fee = (amount * _transferFee) / PERCENTAGE_DIVISOR;
       _transfer(sender, _treasuryWallet, fee);
       _transfer(sender, to, amount - fee);
     } else {
@@ -252,7 +261,7 @@ contract LINGO is ERC20Burnable, Ownable {
     address spender = _msgSender();
     _spendAllowance(from, spender, amount);
     if (_isFeeRequired(from, to)) {
-      uint256 charge = (amount * _transferFee) / 10000;
+      uint256 charge = (amount * _transferFee) / PERCENTAGE_DIVISOR;
       _transfer(from, _treasuryWallet, charge);
       _transfer(from, to, amount - charge);
     } else {
