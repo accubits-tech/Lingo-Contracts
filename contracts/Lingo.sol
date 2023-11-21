@@ -235,7 +235,7 @@ contract LINGO is ERC20Burnable, Ownable {
    * @return bool True if transfer is successful, false otherwise.
    */
   function transfer(address to, uint256 amount) public virtual override returns (bool) {
-    address sender = _msgSender();
+    address sender = msg.sender;
     if (_isFeeRequired(sender, to)) {
       uint256 fee = (amount * _transferFee) / PERCENTAGE_DIVISOR;
       _transfer(sender, _treasuryWallet, fee);
@@ -258,7 +258,7 @@ contract LINGO is ERC20Burnable, Ownable {
     address to,
     uint256 amount
   ) public virtual override returns (bool) {
-    address spender = _msgSender();
+    address spender = msg.sender;
     _spendAllowance(from, spender, amount);
     if (_isFeeRequired(from, to)) {
       uint256 charge = (amount * _transferFee) / PERCENTAGE_DIVISOR;

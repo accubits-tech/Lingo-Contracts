@@ -211,7 +211,7 @@ contract Distribution is Ownable, ReentrancyGuard {
    */
 
   modifier havePendingClaim() {
-    User memory senderDetails = _users[_msgSender()];
+    User memory senderDetails = _users[msg.sender];
 
     if (_distributionHistory.length > 0) {
       DistributionHistory memory lastDistributionDetails = _distributionHistory[
@@ -292,7 +292,7 @@ contract Distribution is Ownable, ReentrancyGuard {
     // Here the amount after fee exemption is beeing validated 
     require(amount > 0, 'LINGO: Amount cannot be zero');
 
-    address sender = _msgSender();
+    address sender = msg.sender;
     uint256 allowance = _token.allowance(sender, address(this));
     require(allowance >= amount, 'LINGO: Insufficient allowance');
 
@@ -348,7 +348,7 @@ contract Distribution is Ownable, ReentrancyGuard {
   function withdraw(uint256 amount) external isUser isActive havePendingClaim nonReentrant {
     require(amount > 0, 'LINGO: Amount cannot be zero');
 
-    address sender = _msgSender();
+    address sender = msg.sender;
     User storage userDetailsTemp = _users[sender];
 
     require(userDetailsTemp.balance >= amount, 'LINGO: Insufficient balance');
@@ -425,7 +425,7 @@ contract Distribution is Ownable, ReentrancyGuard {
    * @notice User must be active, and cannot claim rewards before current slot has started.
    */
   function claimRewards() external isUser isActive nonReentrant {
-    address sender = _msgSender();
+    address sender = msg.sender;
     User memory userDetailsTemp = _users[sender];
 
     /// Ensure that the user has not already claimed rewards for the current slot.
