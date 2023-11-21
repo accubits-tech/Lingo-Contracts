@@ -359,20 +359,12 @@ contract LINGO is ERC20Burnable, Ownable {
    * @notice The function is internal and cannot be called outside the contract.
    */
   function _setDefaultWhitelist() internal {
-    address[3] memory defaultWhiteListedAddresses = [owner(), address(this), _treasuryWallet];
+    address[] memory defaultWhiteListedAddresses = new address[](3);
+    defaultWhiteListedAddresses[0] = owner();
+    defaultWhiteListedAddresses[1] = address(this);
+    defaultWhiteListedAddresses[2] = _treasuryWallet;
 
-    /// We create a dynamic array of addresses using memory allocation with length equal to defaultWhitelistedAddresses length.
-
-    address[] memory defaultWhiteListedAddressesDynamic = new address[](
-      defaultWhiteListedAddresses.length
-    );
-
-    /// Copying the elements from static to dynamic array.
-    for (uint i = 0; i < defaultWhiteListedAddresses.length; i++) {
-      defaultWhiteListedAddressesDynamic[i] = defaultWhiteListedAddresses[i];
-    }
-
-    addToWhiteList(WhiteListTypes.INTERNAL_WHITELISTED, defaultWhiteListedAddressesDynamic);
+    addToWhiteList(WhiteListTypes.INTERNAL_WHITELISTED, defaultWhiteListedAddresses);
   }
 
   /**
