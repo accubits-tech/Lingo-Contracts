@@ -27,6 +27,7 @@ const {
   SLOT,
   ADMIN_CLAIM_PERIOD,
   WITHDRAWAL_FEE,
+  ADMIN_CLAIM_PERIOD_TAKE_EFFECT_TIME_WINDOW
 } = require('./config/index.js');
 const creditsForDuration = require('./utils/creditsForDuration');
 const userClaim = require('./utils/userClaim');
@@ -43,6 +44,7 @@ describe('Distribution Contract', () => {
     const SLOT_BN = BN(SLOT);
     const ADMIN_CLAIM_PERIOD_BN = BN(ADMIN_CLAIM_PERIOD);
     const WITHDRAWAL_FEE_BN = BN(WITHDRAWAL_FEE);
+    const ADMIN_CLAIM_PERIOD_TAKE_EFFECT_TIME_WINDOW_BN = BN(ADMIN_CLAIM_PERIOD_TAKE_EFFECT_TIME_WINDOW);
 
     beforeEach(async () => {
       await reset();
@@ -201,13 +203,45 @@ describe('Distribution Contract', () => {
         expect((await distributionContract.getAdminClaimPeriod()).eq(ADMIN_CLAIM_PERIOD_BN)).is.true;
       });
   
-      it('Owner can update admin claim period', async () => {
+      it('Owner can update admin claim period and it will be in effect after the timelock', async () => {
         expect((await distributionContract.getAdminClaimPeriod()).eq(ADMIN_CLAIM_PERIOD_BN)).is.true;
   
         const NEW_PERIOD = BN(6 * 30 * 24);
         await distributionContract.updateAdminClaimPeriod(NEW_PERIOD);
+
+        // new admin claim period will only take effect once the time window is passed
+        expect((await distributionContract.getAdminClaimPeriod()).eq(ADMIN_CLAIM_PERIOD_BN)).is.true;
+
+        // skip the time window for the new claim period to take effect
+        await skipTime(ADMIN_CLAIM_PERIOD_TAKE_EFFECT_TIME_WINDOW_BN.add(BN(3600)).toNumber());
   
         expect((await distributionContract.getAdminClaimPeriod()).eq(NEW_PERIOD)).is.true;
+      });
+
+      it('New admin claim period take effect after the time lock then admin can claim with new claim period', async () => {
+
+        const balanceBN = BN(1000).mul(BN(10).pow(DECIMALS_BN));
+        await initialFundAllocation(token, balanceBN);
+
+        const amountBN = BN(100).mul(BN(10).pow(DECIMALS_BN));
+        await deposit(distributionContract, token, user1, amountBN);
+        await skipTime(SLOT_BN.mul(BN(3600)).add(BN(3600)).toNumber());
+        const distributeAmountBN = BN(10000).mul(BN(10).pow(DECIMALS_BN));
+        await distribute(distributionContract, token, distributeAmountBN);
+
+        const NEW_PERIOD = BN(3 * 30 * 24);
+
+        await skipTime(BN(NEW_PERIOD).mul(BN(3600)).add(3600).toNumber());
+        await distributionContract.updateAdminClaimPeriod(NEW_PERIOD);
+        
+        await expect(
+          distributionContract.adminClaim()
+        ).to.be.revertedWith('LINGO: Zero tokens available to claim');
+
+        await skipTime(ADMIN_CLAIM_PERIOD_TAKE_EFFECT_TIME_WINDOW_BN.add(BN(3600)).toNumber());
+
+        await distributionContract.adminClaim()
+  
       });
   
       it('Event emitted when slot updated', async () => {

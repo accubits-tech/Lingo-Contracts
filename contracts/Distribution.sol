@@ -55,7 +55,10 @@ contract Distribution is Ownable, ReentrancyGuard {
   uint256 private constant PERCENTAGE_DIVISOR = 10000;
 
   // Number of seconds in an hour
-  uint256 public constant SECONDS_IN_AN_HOUR = 3600;
+  uint256 private constant SECONDS_IN_AN_HOUR = 3600;
+
+  // Admin claim period update time window
+  uint256 private constant ADMIN_CLAIM_PERIOD_TAKE_EFFECT_TIME_WINDOW = 30 days;
 
   /// The ERC20 token used to stake.
   IERC20 private immutable _token;
@@ -96,6 +99,12 @@ contract Distribution is Ownable, ReentrancyGuard {
 
   /// The admin claim period for rewards claimed by the contract owner.
   uint256 private _adminClaimPeriod;
+
+  /// The variable to store the new proposed admin claim period.
+  uint256 private _proposedAdminClaimPeriod;
+
+  /// The admin claim period proposal start timestamp.
+  uint256 private _adminClaimPeriodProposalStart;
 
   /**
    * @dev Event emitted when a user account is deposited with tokens.
@@ -176,7 +185,7 @@ contract Distribution is Ownable, ReentrancyGuard {
 
     _token = IERC20(tokenAddress);
     _updateSlot(slot);
-    _updateAdminClaimPeriod(adminClaimPeriod);
+    _updateAdminClaimPeriod(adminClaimPeriod, true);
     _setTreasuryWalletAddress(treasuryWallet);
     _setWithdrawalFee(fee);
 
@@ -226,6 +235,14 @@ contract Distribution is Ownable, ReentrancyGuard {
     _;
   }
 
+  modifier takeEffectAdminClaimPeriod() {
+    if(isNewAdminClaimPeriodTakeEffect()) {
+      _adminClaimPeriod = _proposedAdminClaimPeriod;
+      delete _proposedAdminClaimPeriod;
+    }
+    _;
+  }
+
   /**
    * @dev Sets the treasury wallet address to a new value, access restricted to the owner.
    * @param account The new address for the treasury wallet.
@@ -270,17 +287,28 @@ contract Distribution is Ownable, ReentrancyGuard {
    * @param newAdminClaimPeriod The new value for the admin claim period.
    */
   function updateAdminClaimPeriod(uint256 newAdminClaimPeriod) external onlyOwner {
-    _updateAdminClaimPeriod(newAdminClaimPeriod);
+    _updateAdminClaimPeriod(newAdminClaimPeriod, false);
   }
 
   /**
    * @dev Updates the admin claim period to a new value.
    * @param newAdminClaimPeriod The new value for the admin claim period.
+   * @param skipTimeLock Flag to skip the time lock and set the admin claim period immediately.
    */
-  function _updateAdminClaimPeriod(uint256 newAdminClaimPeriod) internal {
-    _adminClaimPeriod = newAdminClaimPeriod;
+  function _updateAdminClaimPeriod(uint256 newAdminClaimPeriod, bool skipTimeLock) internal {
+    require(newAdminClaimPeriod > 0, 'LINGO: Admin claim period cannot be zero');
+
+    // immediately set the new admin claim period if skipTimeLock flag is true
+    // this is to aid initial setup of admin claim period without the timelock
+    if(skipTimeLock){
+      _adminClaimPeriod = newAdminClaimPeriod;
+    } else{
+      _proposedAdminClaimPeriod = newAdminClaimPeriod;
+      _adminClaimPeriodProposalStart = block.timestamp;
+    }
+
     /// Emits an event when `_adminClaimPeriod` is updated using this function.
-    emit AdminClaimPeriodUpdated(_adminClaimPeriod);
+    emit AdminClaimPeriodUpdated(newAdminClaimPeriod);
   }
 
   /**
@@ -510,7 +538,7 @@ contract Distribution is Ownable, ReentrancyGuard {
    * There must be available tokens to claim.
    *
    */
-  function adminClaim() external onlyOwner nonReentrant {
+  function adminClaim() external onlyOwner takeEffectAdminClaimPeriod nonReentrant {
     uint256 totalClaim = 0;
 
     /// Calculates the total amount of tokens that can be claimed by the owner.
@@ -568,9 +596,31 @@ contract Distribution is Ownable, ReentrancyGuard {
    * @return An unsigned integer representing the number of hours after which unclaimed tokens can be claimed.
    */
   function getAdminClaimPeriod() external view returns (uint256) {
-    return _adminClaimPeriod;
+    if(isNewAdminClaimPeriodTakeEffect()){
+      return _proposedAdminClaimPeriod;
+    } else {
+      return _adminClaimPeriod;
+    }
   }
 
+  /**
+   * @dev     returns the proposed admin claim period if it is set.
+   * @return  uint256  the proposed admin claim period in number of hours.
+   */
+  function getProposedAdminClaimPeriod() external view returns (uint256) {
+    return _proposedAdminClaimPeriod;
+  }
+
+  /**
+   * @dev  This function is to check whether the time lock is over for the new proposed admin claim period to take effect.
+   * @return  bool true if the time lock is over for the new proposed admin claim period to take effect.
+   */
+  function isNewAdminClaimPeriodTakeEffect() internal view returns (bool) {
+    return (
+      block.timestamp > (_adminClaimPeriodProposalStart + ADMIN_CLAIM_PERIOD_TAKE_EFFECT_TIME_WINDOW) && 
+      _proposedAdminClaimPeriod > 0
+    );
+  }
   /**
    * @dev Returns the percentage fee charged on withdrawals from the contract.
    * @return An unsigned integer representing the percentage fee charged on withdrawals from the contract.
