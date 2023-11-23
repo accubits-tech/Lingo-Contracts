@@ -1043,6 +1043,47 @@ describe('Distribution Contract', () => {
           expect(distributionHistory[i].remainingTokensToClaim.eq(BN(0))).is.true;
         }
       });
+
+      it('Users can claim their pending rewards for number of slots', async () => {
+        const amountBN = BN(100).mul(BN(10).pow(DECIMALS_BN));
+        await deposit(distributionContract, token, user1, amountBN);
+  
+        const skipTimeInSeconds = SLOT_BN.mul(BN(3600)).add(BN(3600));
+  
+        await skipTime(skipTimeInSeconds.toNumber());
+        const distributeAmountBN = BN(10000).mul(BN(10).pow(DECIMALS_BN));
+        await distribute(distributionContract, token, distributeAmountBN);
+  
+        await skipTime(skipTimeInSeconds.toNumber());
+        await distribute(distributionContract, token, distributeAmountBN);
+
+        await skipTime(skipTimeInSeconds.toNumber());
+        await distribute(distributionContract, token, distributeAmountBN);
+  
+        const balance = await token.balanceOf(user1.address);
+        await distributionContract.connect(user1).claimRewardsForSlots(2);
+  
+        const expectedAmount = await debitFee(token, distributeAmountBN.mul(BN(2)));
+  
+        const finalBalance = await token.balanceOf(user1.address);
+        const epochTimeInHoursBN = BN(Math.floor(Date.now() / 1000 / 3600)).add(
+          SLOT_BN.mul(BN(3)).add(BN(3))
+        );
+        const userStatus = await distributionContract.getUserStatus(user1.address);
+
+        expect(finalBalance.sub(balance).eq(expectedAmount)).is.true;
+        expect(userStatus.lastClaimedTimestamp.eq(epochTimeInHoursBN)).is.true;
+  
+        const distributionHistory = await distributionContract.getDistributionHistory();
+        expect(distributionHistory[0].remainingTokensToClaim.eq(BN(0))).is.true;
+        expect(distributionHistory[1].remainingTokensToClaim.eq(BN(0))).is.true;
+        expect(distributionHistory[2].remainingTokensToClaim.eq(distributeAmountBN)).is.true;
+        
+        await expect(distributionContract.connect(user1).withdraw(amountBN)).to.be.revertedWith(
+          'LINGO: User have unclaimed tokens. Please claim it before deposit or withdraw'
+        );
+
+      });
   
       it('Event emitted when fund claimed', async () => {
         const amountBN = BN(100).mul(BN(10).pow(DECIMALS_BN));
@@ -1311,6 +1352,57 @@ describe('Distribution Contract', () => {
         distributionHistory.forEach((val) => {
           expect(val.remainingTokensToClaim.eq(BN(0))).is.true;
         });
+      });
+
+      it('Admin can withdraw the expired tokens for a number of slots', async () => {
+        const amountBN = BN(100).mul(BN(10).pow(DECIMALS_BN));
+        await deposit(distributionContract, token, user1, amountBN);
+        await skipTime(SLOT_BN.mul(BN(3600)).add(BN(3600)).toNumber());
+        const distributeAmountBN = BN(10000).mul(BN(10).pow(DECIMALS_BN));
+        await distribute(distributionContract, token, distributeAmountBN);
+  
+        await skipTime(SLOT_BN.mul(BN(3600)).toNumber());
+        await distribute(distributionContract, token, distributeAmountBN);
+  
+        await skipTime(SLOT_BN.mul(BN(3600)).toNumber());
+        await distribute(distributionContract, token, distributeAmountBN);
+
+        await skipTime(SLOT_BN.mul(BN(3600)).toNumber());
+        await distribute(distributionContract, token, distributeAmountBN);
+  
+        const balance = await token.balanceOf(owner.address);
+        let distributionHistory = await distributionContract.getDistributionHistory();
+
+        const claimAmountForTwoSlots =  distributionHistory[0].remainingTokensToClaim
+        .add(distributionHistory[1].remainingTokensToClaim);
+  
+        const adminClaimPeriod = await distributionContract.getAdminClaimPeriod();
+        await skipTime(adminClaimPeriod.mul(BN(3600)).toNumber());
+  
+        await distributionContract.adminClaimForSlots(2);
+  
+        const balanceAfterFirstClaim = await token.balanceOf(owner.address);
+        expect(balanceAfterFirstClaim.sub(balance).eq(claimAmountForTwoSlots)).is.true;
+  
+        distributionHistory = await distributionContract.getDistributionHistory();
+        expect(distributionHistory[0].remainingTokensToClaim.eq(BN(0))).is.true;
+        expect(distributionHistory[1].remainingTokensToClaim.eq(BN(0))).is.true;
+        expect(distributionHistory[2].remainingTokensToClaim.eq(distributeAmountBN)).is.true;
+        expect(distributionHistory[3].remainingTokensToClaim.eq(distributeAmountBN)).is.true;
+
+        const balanceAmountToBeClaimed =  distributionHistory[2].remainingTokensToClaim
+        .add(distributionHistory[3].remainingTokensToClaim);
+
+        await distributionContract.adminClaim();
+
+        const balanceAfterFullClaim = await token.balanceOf(owner.address);
+        expect(balanceAfterFullClaim.sub(balanceAmountToBeClaimed).eq(balanceAfterFirstClaim)).is.true;
+        
+        distributionHistory = await distributionContract.getDistributionHistory();
+        expect(distributionHistory[0].remainingTokensToClaim.eq(BN(0))).is.true;
+        expect(distributionHistory[1].remainingTokensToClaim.eq(BN(0))).is.true;
+        expect(distributionHistory[2].remainingTokensToClaim.eq(BN(0))).is.true;
+        expect(distributionHistory[3].remainingTokensToClaim.eq(BN(0))).is.true;
       });
   
       it('Admin can withdraw only expired tokens', async () => {

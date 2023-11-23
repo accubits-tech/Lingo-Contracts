@@ -27,6 +27,7 @@ contract Distribution is Ownable, ReentrancyGuard {
     uint256 forecastedCredits;
     uint256 lastUpdatedTimestamp;
     uint256 lastClaimedTimestamp;
+    uint256 lastClaimedSlot;
   }
 
   /**
@@ -96,6 +97,9 @@ contract Distribution is Ownable, ReentrancyGuard {
 
   /// An array of DistributionHistory structs representing the profit distribution history.
   DistributionHistory[] private _distributionHistory;
+
+  /// The slot in which the admin last claimed
+  uint256 private _adminLastClaimedSlot;
 
   /// The admin claim period for rewards claimed by the contract owner.
   uint256 private _adminClaimPeriod;
@@ -228,7 +232,8 @@ contract Distribution is Ownable, ReentrancyGuard {
       ];
       require(
         (senderDetails.forecastedCredits == 0 && senderDetails.balance == 0) ||
-        (senderDetails.lastClaimedTimestamp > lastDistributionDetails.endTime),
+        (senderDetails.lastClaimedTimestamp > lastDistributionDetails.endTime) &&
+        (_distributionHistory.length - 1 == senderDetails.lastClaimedSlot),
         'LINGO: User have unclaimed tokens. Please claim it before deposit or withdraw'
       );
     }
@@ -449,10 +454,26 @@ contract Distribution is Ownable, ReentrancyGuard {
   }
 
   /**
-   * @dev Allows user to claim their monthly rewards if any.
-   * @notice User must be active, and cannot claim rewards before current slot has started.
+   * @dev Allows user to claim all available rewards
    */
-  function claimRewards() external isUser isActive nonReentrant {
+  function claimRewards() external {
+    _claimRewards(_distributionHistory.length);
+  }
+
+  /**
+   * @dev Allows user to select the number of slots and claim the rewards if any.
+   * @param  numberOfSlotsToClaim an unsigned integer represents the number slots to claim.
+   */
+  function claimRewardsForSlots(uint256 numberOfSlotsToClaim) external {
+    _claimRewards(numberOfSlotsToClaim);
+  }
+
+  /**
+   * @dev Allows user to select the number of slots and claim the rewards if any.
+   * @notice User must be active, and cannot claim rewards before current slot has started.
+   * @param  numberOfSlotsToClaim an unsigned integer represents the number slots to claim.
+   */
+  function _claimRewards(uint256 numberOfSlotsToClaim) internal isUser isActive nonReentrant {
     address sender = msg.sender;
     User memory userDetailsTemp = _users[sender];
 
@@ -462,6 +483,7 @@ contract Distribution is Ownable, ReentrancyGuard {
     uint256 totalClaim = 0;
     uint256 credits = 0;
     uint256 claim = 0;
+    uint256 range = 0;
 
     /// If no distribution history exists or user has to claim rewards in the last slot only. calculate claim for the last slot.
     if (
@@ -482,10 +504,17 @@ contract Distribution is Ownable, ReentrancyGuard {
 
         /// Reduce remaining tokens in the distribution history for the corresponding claim.
         _distributionHistory[_distributionHistory.length - 1].remainingTokensToClaim -= claim;
+
+        userDetailsTemp.lastClaimedSlot = _distributionHistory.length - 1;
       }
     } else {
+      if((_distributionHistory.length - userDetailsTemp.lastClaimedSlot) < numberOfSlotsToClaim){
+        range = _distributionHistory.length;
+      } else {
+        range = userDetailsTemp.lastClaimedSlot + numberOfSlotsToClaim;
+      }
       //Calculate claim for all slots till last claimed timestamp by user.
-      for (uint256 i = 0; i < _distributionHistory.length; i++) {
+      for (uint256 i = userDetailsTemp.lastClaimedSlot; i < range; i++) {
         if (
           _distributionHistory[i].endTime >= userDetailsTemp.lastClaimedTimestamp &&
           _distributionHistory[i].totalCredits > 0 &&
@@ -509,8 +538,12 @@ contract Distribution is Ownable, ReentrancyGuard {
 
           /// Reduce remaining tokens in the distribution history for the corresponding claim.
           _distributionHistory[i].remainingTokensToClaim -= claim;
+
         }
       }
+
+      /// update the last claimed slot for the user so that it will be the starting point for the next claim.
+      userDetailsTemp.lastClaimedSlot = range - 1;
     }
 
     /// Ensure that the total claim amount is greater than zero.
@@ -533,21 +566,45 @@ contract Distribution is Ownable, ReentrancyGuard {
   }
 
   /**
+   * @dev Allows user to claim all available rewards
+   */
+  function adminClaim() external {
+    _adminClaim(_distributionHistory.length);
+  }
+
+  /**
+  //  * @dev Allows user to select the number of slots and claim the rewards if any.
+  //  * @param   numberOfSlotsToClaim an unsigned integer represents the number slots to claim.
+  //  */
+  function adminClaimForSlots(uint256 numberOfSlotsToClaim) external {
+    _adminClaim(numberOfSlotsToClaim);
+  }
+
+  /**
    * @dev Claims tokens that were not claimed by users during their distribution period for the owner.
    * @notice The caller must be the contract owner, Only tokens from distribution periods that ended at least `_adminClaimPeriod` hours ago will be claimed,
    * There must be available tokens to claim.
-   *
+   * @param numberOfSlotsToClaim an unsigned integer represents the number slots to claim.
    */
-  function adminClaim() external onlyOwner takeEffectAdminClaimPeriod nonReentrant {
+  function _adminClaim(uint256 numberOfSlotsToClaim) internal onlyOwner takeEffectAdminClaimPeriod nonReentrant {
     uint256 totalClaim = 0;
+    uint256 range = 0;
+
+    if((_distributionHistory.length - _adminLastClaimedSlot) < numberOfSlotsToClaim){
+        range = _distributionHistory.length;
+      } else {
+        range = _adminLastClaimedSlot + numberOfSlotsToClaim;
+      }
 
     /// Calculates the total amount of tokens that can be claimed by the owner.
-    for (uint256 i = 0; i < _distributionHistory.length; i++) {
+    for (uint256 i = _adminLastClaimedSlot; i < range; i++) {
       if (((block.timestamp / SECONDS_IN_AN_HOUR) - _distributionHistory[i].endTime) >= _adminClaimPeriod) {
         totalClaim += _distributionHistory[i].remainingTokensToClaim;
         _distributionHistory[i].remainingTokensToClaim = 0;
       }
     }
+
+    _adminLastClaimedSlot = range - 1;
 
     /// Makes sure there are tokens available to claim.
     require(totalClaim > 0, 'LINGO: Zero tokens available to claim');

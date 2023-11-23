@@ -38,10 +38,10 @@ contract LINGO is ERC20Burnable, Ownable {
   address private _treasuryWallet;
 
   /// This creates a mapping between external addresses and a boolean value indicating if they're whitelisted
-  mapping(address => bool) private _isExternalWhiteListed;
+  mapping(address => uint256) private _isExternalWhiteListed;
 
   /// This creates a mapping between internal addresses and a boolean value indicating if they're whitelisted
-  mapping(address => bool) private _isInternalWhiteListed;
+  mapping(address => uint256) private _isInternalWhiteListed;
 
   /// This is an array that stores all external white listed addresses
   address[] private _externalWhitelistedAddresses;
@@ -178,7 +178,7 @@ contract LINGO is ERC20Burnable, Ownable {
    * @return bool `true` if the account is white-listed, `false` otherwise.
    */
   function isExternalWhiteListed(address account) external view returns (bool) {
-    return _isExternalWhiteListed[account];
+    return _isExternalWhiteListed[account] > 0;
   }
 
   /**
@@ -187,7 +187,7 @@ contract LINGO is ERC20Burnable, Ownable {
    * @return bool `true` if the account is white-listed, `false` otherwise.
    */
   function isInternalWhiteListed(address account) external view returns (bool) {
-    return _isInternalWhiteListed[account];
+    return _isInternalWhiteListed[account] > 0;
   }
 
   /**
@@ -279,21 +279,21 @@ contract LINGO is ERC20Burnable, Ownable {
     if (whiteListType == WhiteListTypes.EXTERNAL_WHITELISTED) {
       for (uint i = 0; i < users.length; i++) {
         /// Check if address is already whitelisted
-        if (_isExternalWhiteListed[users[i]]) continue;
+        if (_isExternalWhiteListed[users[i]] > 0) continue;
 
         /// If not, add it to external whitelist and mark as true
         _externalWhitelistedAddresses.push(users[i]);
-        _isExternalWhiteListed[users[i]] = true;
+        _isExternalWhiteListed[users[i]] = _externalWhitelistedAddresses.length;
       }
       emit WhiteListUpdated(whiteListType, true, users);
     } else if (whiteListType == WhiteListTypes.INTERNAL_WHITELISTED) {
       for (uint i = 0; i < users.length; i++) {
         /// Check if address is already whitelisted
-        if (_isInternalWhiteListed[users[i]]) continue;
+        if (_isInternalWhiteListed[users[i]] > 0) continue;
 
         /// If not, add it to internal whitelist and mark as true
         _internalWhitelistedAddresses.push(users[i]);
-        _isInternalWhiteListed[users[i]] = true;
+        _isInternalWhiteListed[users[i]] = _internalWhitelistedAddresses.length;
       }
       emit WhiteListUpdated(whiteListType, true, users);
     }
@@ -309,26 +309,25 @@ contract LINGO is ERC20Burnable, Ownable {
     bool isRemoved = true;
     for (uint i = 0; i < users.length; i++) {
       /// Check if the address is present in the whitelist
-      if (!_isInternalWhiteListed[users[i]]) {
+
+      uint256 addressPositionalValue = _isInternalWhiteListed[users[i]];
+      if (!(addressPositionalValue > 0)) {
         isRemoved = false;
         continue;
       }
 
-      for (uint j = 0; j < _internalWhitelistedAddresses.length; j++) {
-        if (users[i] == _internalWhitelistedAddresses[j]) {
-          _isInternalWhiteListed[users[i]] = false;
-
-          /// Swap the removed address with the last address in the array and pop it off
-          _internalWhitelistedAddresses[j] = _internalWhitelistedAddresses[
-            _internalWhitelistedAddresses.length - 1
-          ];
-          _internalWhitelistedAddresses.pop();
-          break;
-        }
+      if(_internalWhitelistedAddresses.length > 1){
+        address lastAddress = _internalWhitelistedAddresses[_internalWhitelistedAddresses.length - 1];
+        /// Swap the removed address with the last address in the array and pop it off
+        _internalWhitelistedAddresses[addressPositionalValue - 1] = lastAddress;
+        _isInternalWhiteListed[lastAddress] = addressPositionalValue;
       }
+      
+      _isInternalWhiteListed[users[i]] = 0;
+      _internalWhitelistedAddresses.pop();
     }
-    if (isRemoved) emit WhiteListUpdated(WhiteListTypes.INTERNAL_WHITELISTED, false, users);
-    return isRemoved;
+      if (isRemoved) emit WhiteListUpdated(WhiteListTypes.INTERNAL_WHITELISTED, false, users);
+      return isRemoved;
   }
 
   /**
@@ -340,28 +339,28 @@ contract LINGO is ERC20Burnable, Ownable {
   function _removeFromExternalWhiteList(address[] memory users) internal onlyOwner returns(bool){
     bool isRemoved = true;
     for (uint i = 0; i < users.length; i++) {
+
+      uint256 addressPositionalValue = _isExternalWhiteListed[users[i]];
       /// Check if the address is present in the whitelist
-      if (!_isExternalWhiteListed[users[i]]) {
+      if (!(addressPositionalValue > 0)) {
         isRemoved = false;
         continue;
       }
 
-      for (uint j = 0; j < _externalWhitelistedAddresses.length; j++) {
-        if (users[i] == _externalWhitelistedAddresses[j]) {
-          _isExternalWhiteListed[users[i]] = false;
-
-          /// Swap the removed address with the last address in the array and pop it off
-          _externalWhitelistedAddresses[j] = _externalWhitelistedAddresses[
-            _externalWhitelistedAddresses.length - 1
-          ];
-          _externalWhitelistedAddresses.pop();
-          break;
-        }
+      if(_externalWhitelistedAddresses.length > 1){
+        address lastAddress = _externalWhitelistedAddresses[_externalWhitelistedAddresses.length - 1];
+        /// Swap the removed address with the last address in the array and pop it off
+        _externalWhitelistedAddresses[addressPositionalValue - 1] = lastAddress;
+        _isExternalWhiteListed[lastAddress] = addressPositionalValue;
       }
+      
+      _isExternalWhiteListed[users[i]] = 0;
+      _externalWhitelistedAddresses.pop();
     }
     if (isRemoved) emit WhiteListUpdated(WhiteListTypes.EXTERNAL_WHITELISTED, false, users);
     return isRemoved;
   }
+
 
   /**
    * @dev This function sets the default whitelist that contains three addresses: owner, contract address and treasury wallet.
@@ -384,7 +383,7 @@ contract LINGO is ERC20Burnable, Ownable {
    */
   function _isFeeRequired(address from, address to) internal view returns (bool) {
     if (
-      !_isInternalWhiteListed[from] && !_isInternalWhiteListed[to] && !_isExternalWhiteListed[to]
+      !(_isInternalWhiteListed[from] > 0) && !(_isInternalWhiteListed[to] > 0) && !(_isExternalWhiteListed[to] > 0)
     ) {
       return true;
     }
