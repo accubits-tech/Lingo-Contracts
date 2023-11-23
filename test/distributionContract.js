@@ -551,11 +551,37 @@ describe('Distribution Contract', () => {
         expect(userStatus1.lastClaimedTimestamp.eq(currentEpochTimeInHoursBN1)).is.true;
   
         const balance = await token.balanceOf(user1.address);
-  
         await withdraw(distributionContract, user1, amountBN);
+        const expectedAmount = await debitWithdrawalFee(token, distributionContract, amountBN);
+        expect((await token.balanceOf(user1.address)).eq(balance.add(expectedAmount))).is.true;
+      });
+
+      it("A user will be removed once he withdraws all his funds and don't have any rewards to claim", async () => {
+        const amountBN = BN(100).mul(BN(10).pow(DECIMALS_BN));
+
+        await token.connect(user1).approve(distributionContract.address, amountBN);
+        await expect(distributionContract.connect(user1).deposit(amountBN))
+          .to.emit(distributionContract, 'UserAdded')
+          .withArgs(user1.address);
+
+  
+        const userStatus1 = await distributionContract.getUserStatus(user1.address);
+        const currentEpochTimeInHoursBN1 = BN(Math.floor(Date.now() / 1000 / 3600));
+  
+        expect(userStatus1.balance.eq(amountBN)).is.true;
+        expect(userStatus1.forecastedCredits.eq(amountBN.mul(SLOT_BN))).is.true;
+        expect(userStatus1.lastUpdatedTimestamp.eq(currentEpochTimeInHoursBN1)).is.true;
+        expect(userStatus1.lastClaimedTimestamp.eq(currentEpochTimeInHoursBN1)).is.true;
+  
+        const balance = await token.balanceOf(user1.address);
+  
+        await expect(distributionContract.connect(user1).withdraw(amountBN))
+          .to.emit(distributionContract, 'UserRemoved')
+          .withArgs(user1.address);
   
         const userStatus2 = await distributionContract.getUserStatus(user1.address);
         const currentEpochTimeInHoursBN2 = BN(Math.floor(Date.now() / 1000 / 3600));
+
         const expectedCredits = await forecastCredits(
           distributionContract,
           userStatus1,
@@ -563,13 +589,17 @@ describe('Distribution Contract', () => {
           currentEpochTimeInHoursBN2,
           0
         );
+        await expect(expectedCredits.eq(BN(0))).is.true;
+
         const expectedAmount = await debitWithdrawalFee(token, distributionContract, amountBN);
   
         expect((await token.balanceOf(user1.address)).eq(balance.add(expectedAmount))).is.true;
         expect(userStatus2.balance.eq(BN(0))).is.true;
         expect(userStatus2.forecastedCredits.eq(expectedCredits)).is.true;
-        expect(userStatus2.lastUpdatedTimestamp.eq(currentEpochTimeInHoursBN2)).is.true;
-        expect(userStatus2.lastClaimedTimestamp.eq(currentEpochTimeInHoursBN2)).is.true;
+
+        // Since the user is removed due to all his funds been withdrawn also dont have any rewards to claim
+        expect(userStatus2.lastUpdatedTimestamp.eq(BN(0))).is.true;
+        expect(userStatus2.lastClaimedTimestamp.eq(BN(0))).is.true;
       });
   
       it('Any active user can partially withdraw staked fund', async () => {
@@ -610,6 +640,7 @@ describe('Distribution Contract', () => {
         expect(userStatus2.lastUpdatedTimestamp.eq(currentEpochTimeInHoursBN2)).is.true;
         expect(userStatus2.lastClaimedTimestamp.eq(currentEpochTimeInHoursBN2)).is.true;
       });
+
   
       it('Multiple users can withdraw ', async () => {
         const amountBN1 = BN(100).mul(BN(10).pow(DECIMALS_BN));

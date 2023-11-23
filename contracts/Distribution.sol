@@ -90,7 +90,7 @@ contract Distribution is Ownable, ReentrancyGuard {
   mapping(address => User) private _users;
 
   /// A mapping indicating whether an address is a registered user or not.
-  mapping(address => bool) private _isUser;
+  mapping(address => uint256) private _isUser;
 
   /// An array of all registered user addresses.
   address[] private _userAddresses;
@@ -169,6 +169,18 @@ contract Distribution is Ownable, ReentrancyGuard {
   event AdminClaimPeriodUpdated(uint256 adminClaimPeriod);
 
   /**
+  * @dev Event emitted when a new user added to the platform.
+  * @param account The address of the user.
+  */
+  event UserAdded(address indexed account);
+
+  /**
+  * @dev Event emitted when a new user gets removed from the platform.
+  * @param account The address of the user.
+  */
+  event UserRemoved(address indexed account);
+
+  /**
    * @dev Contract constructor function, sets initial values for various parameters
    * @param admin Address of the owner of the contract
    * @param treasuryWallet Address of the wallet to which fees are sent
@@ -203,7 +215,7 @@ contract Distribution is Ownable, ReentrancyGuard {
    * @dev Modifier to check that the user is an active user
    */
   modifier isUser() {
-    require(_isUser[msg.sender], 'LINGO: Not an active user');
+    require(_isUser[msg.sender] > 0, 'LINGO: Not an active user');
     _;
   }
 
@@ -339,14 +351,17 @@ contract Distribution is Ownable, ReentrancyGuard {
 
     User memory userDetailsTemp = _users[sender];
 
-    /// If user is depositing for the first time or there was no credit or balance present
-    ///  set their last claimed timestamp.
+    // upon claiming any remaing rewards and widrawing the all funds the user will be removed from platfrom
     if (userDetailsTemp.forecastedCredits == 0 && userDetailsTemp.balance == 0) {
-      if(!_isUser[sender] ) {
-        _isUser[sender] = true;
         _userAddresses.push(sender);
-      }
-      userDetailsTemp.lastClaimedTimestamp = block.timestamp / SECONDS_IN_AN_HOUR;
+        _isUser[sender] = _userAddresses.length;
+
+        // Set the ongoing distribution slot to be the last claimed slot
+        // In the case of user onboarded before first distribution, the distribution history will be be empty
+        _distributionHistory.length > 0 ?  userDetailsTemp.lastClaimedSlot = _distributionHistory.length - 1 : 0;
+        userDetailsTemp.lastClaimedTimestamp = block.timestamp / SECONDS_IN_AN_HOUR;
+
+        emit UserAdded(sender);
     }
 
     // Calculate added credits credits
@@ -361,8 +376,6 @@ contract Distribution is Ownable, ReentrancyGuard {
     /// Update last updated timestamp to current hour.
     userDetailsTemp.lastUpdatedTimestamp = block.timestamp / SECONDS_IN_AN_HOUR;
 
-    // /// Add the new forecasted credits to the total credits.
-    // _totalCredits += userDetailsTemp.forecastedCredits;
     /// Add deposited amount to the total amount.
     _totalAmount += depositedAmount;
 
@@ -401,8 +414,13 @@ contract Distribution is Ownable, ReentrancyGuard {
     /// Deduct withdrawn amount from total amount.
     _totalAmount -= amount;
 
-    // Store the updated user details in the mapping.
-    _users[sender] = userDetailsTemp;
+    if(userDetailsTemp.forecastedCredits == 0 && userDetailsTemp.balance == 0){
+      // remove the user since he no longer have any possesion in this platform
+      _removeUser(sender);
+    } else {
+      // Store the updated user details in the mapping.
+      _users[sender] = userDetailsTemp;
+    }
 
     uint256 fee = (amount * _withdrawalFee) / PERCENTAGE_DIVISOR;
 
@@ -414,6 +432,33 @@ contract Distribution is Ownable, ReentrancyGuard {
 
     /// Emit withdraw event with user's address and withdrawn amount.
     emit Withdraw(sender, amount);
+  }
+
+  /**
+   * @dev This method will be called when user needs to be removed from the platform
+   *      will be called in the withdraw function when a user withdraws all his possesions from the platform
+   * @param account is the address of the user that needs to be removed
+   */
+  function _removeUser(address account) internal {
+
+    // get the position of the account in the _userAddresses array
+    uint256 accountPositionalValue = _isUser[account];
+    // get the last element of the _userAddresses array
+    address arrayLastAddress = _userAddresses[_userAddresses.length - 1];
+
+    //copy the last account to the position of the account to be removed
+    _userAddresses[accountPositionalValue - 1] = arrayLastAddress;
+    // Update the last accounts positional value
+    _isUser[arrayLastAddress] = accountPositionalValue;
+
+    // remove the last account to avoid duplication
+    _userAddresses.pop();
+    
+    // remove the user account details
+    delete _users[account];
+    delete _isUser[account];
+
+    emit UserRemoved(account);
   }
 
   /**
