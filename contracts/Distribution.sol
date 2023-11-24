@@ -3,7 +3,7 @@
  */
 pragma solidity 0.8.18;
 
-import {IERC20, SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { IERC20, SafeERC20 } from '@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol';
 import '@openzeppelin/contracts/access/Ownable.sol';
 import '@openzeppelin/contracts/security/ReentrancyGuard.sol';
 
@@ -169,15 +169,15 @@ contract Distribution is Ownable, ReentrancyGuard {
   event AdminClaimPeriodUpdated(uint256 adminClaimPeriod);
 
   /**
-  * @dev Event emitted when a new user added to the platform.
-  * @param account The address of the user.
-  */
+   * @dev Event emitted when a new user added to the platform.
+   * @param account The address of the user.
+   */
   event UserAdded(address indexed account);
 
   /**
-  * @dev Event emitted when a new user gets removed from the platform.
-  * @param account The address of the user.
-  */
+   * @dev Event emitted when a new user gets removed from the platform.
+   * @param account The address of the user.
+   */
   event UserRemoved(address indexed account);
 
   /**
@@ -215,7 +215,7 @@ contract Distribution is Ownable, ReentrancyGuard {
    * @dev Modifier to check that the user is an active user
    */
   modifier isUser() {
-    require(_isUser[msg.sender] > 0, 'LINGO: Not an active user');
+    require(isRegisteredUser(msg.sender), 'LINGO: Not an active user');
     _;
   }
 
@@ -225,7 +225,8 @@ contract Distribution is Ownable, ReentrancyGuard {
 
   modifier isActive() {
     require(
-      (block.timestamp / SECONDS_IN_AN_HOUR) <= _currentSlotEnd && (block.timestamp / SECONDS_IN_AN_HOUR) >= _currentSlotStart,
+      (block.timestamp / SECONDS_IN_AN_HOUR) <= _currentSlotEnd &&
+        (block.timestamp / SECONDS_IN_AN_HOUR) >= _currentSlotStart,
       'LINGO: Distribution is on hold. Please contact admin'
     );
     _;
@@ -243,17 +244,17 @@ contract Distribution is Ownable, ReentrancyGuard {
         _distributionHistory.length - 1
       ];
       require(
-        (senderDetails.forecastedCredits == 0 && senderDetails.balance == 0) ||
+        !isRegisteredUser(msg.sender) ||
         (senderDetails.lastClaimedTimestamp > lastDistributionDetails.endTime) &&
         (_distributionHistory.length - 1 == senderDetails.lastClaimedSlot),
-        'LINGO: User have unclaimed tokens. Please claim it before deposit or withdraw'
+        'LINGO: User have unclaimed tokens. Please claim it before deposit'
       );
     }
     _;
   }
 
   modifier takeEffectAdminClaimPeriod() {
-    if(isNewAdminClaimPeriodTakeEffect()) {
+    if (isNewAdminClaimPeriodTakeEffect()) {
       _adminClaimPeriod = _proposedAdminClaimPeriod;
       delete _proposedAdminClaimPeriod;
     }
@@ -317,9 +318,9 @@ contract Distribution is Ownable, ReentrancyGuard {
 
     // immediately set the new admin claim period if skipTimeLock flag is true
     // this is to aid initial setup of admin claim period without the timelock
-    if(skipTimeLock){
+    if (skipTimeLock) {
       _adminClaimPeriod = newAdminClaimPeriod;
-    } else{
+    } else {
       _proposedAdminClaimPeriod = newAdminClaimPeriod;
       _adminClaimPeriodProposalStart = block.timestamp;
     }
@@ -333,8 +334,7 @@ contract Distribution is Ownable, ReentrancyGuard {
    * @param amount Amount of tokens being deposited by the user.
    */
   function deposit(uint256 amount) external isActive havePendingClaim nonReentrant {
-
-    // Here the amount after fee exemption is beeing validated 
+    // Here the amount after fee exemption is beeing validated
     require(amount > 0, 'LINGO: Amount cannot be zero');
 
     address sender = msg.sender;
@@ -352,20 +352,24 @@ contract Distribution is Ownable, ReentrancyGuard {
     User memory userDetailsTemp = _users[sender];
 
     // upon claiming any remaing rewards and widrawing the all funds the user will be removed from platfrom
-    if (userDetailsTemp.forecastedCredits == 0 && userDetailsTemp.balance == 0) {
-        _userAddresses.push(sender);
-        _isUser[sender] = _userAddresses.length;
+    if (!isRegisteredUser(sender)) {
 
-        // Set the ongoing distribution slot to be the last claimed slot
-        // In the case of user onboarded before first distribution, the distribution history will be be empty
-        _distributionHistory.length > 0 ?  userDetailsTemp.lastClaimedSlot = _distributionHistory.length - 1 : 0;
-        userDetailsTemp.lastClaimedTimestamp = block.timestamp / SECONDS_IN_AN_HOUR;
+      _userAddresses.push(sender);
+      _isUser[sender] = _userAddresses.length;
 
-        emit UserAdded(sender);
+      // Set the ongoing distribution slot to be the last claimed slot
+      // In the case of user onboarded before first distribution, the distribution history will be be empty
+      _distributionHistory.length > 0
+        ? userDetailsTemp.lastClaimedSlot = _distributionHistory.length - 1
+        : 0;
+      userDetailsTemp.lastClaimedTimestamp = block.timestamp / SECONDS_IN_AN_HOUR;
+
+      emit UserAdded(sender);
     }
 
     // Calculate added credits credits
-    uint256 addedCredits = depositedAmount * (_currentSlotEnd - block.timestamp / SECONDS_IN_AN_HOUR);
+    uint256 addedCredits = depositedAmount *
+      (_currentSlotEnd - block.timestamp / SECONDS_IN_AN_HOUR);
     // Update user forcasted credits
     userDetailsTemp.forecastedCredits += addedCredits;
     // update total forcasted credits
@@ -391,7 +395,7 @@ contract Distribution is Ownable, ReentrancyGuard {
    * @notice Users can only withdraw if they have previously deposited tokens for staking.
    * @param amount Amount of tokens being withdrawn by the user.
    */
-  function withdraw(uint256 amount) external isUser isActive havePendingClaim nonReentrant {
+  function withdraw(uint256 amount) external isUser havePendingClaim nonReentrant {
     require(amount > 0, 'LINGO: Amount cannot be zero');
 
     address sender = msg.sender;
@@ -399,8 +403,14 @@ contract Distribution is Ownable, ReentrancyGuard {
 
     require(userDetailsTemp.balance >= amount, 'LINGO: Insufficient balance');
 
+    // In the case of the current slot is over and the distribution is not done
+    // then the remaining hours to be set zero
+    uint256 remainingHoursInSlot = _currentSlotEnd > (block.timestamp / SECONDS_IN_AN_HOUR)
+      ? _currentSlotEnd - block.timestamp / SECONDS_IN_AN_HOUR
+      : 0;
+
     // Calculate the lost credits
-    uint256 lostCredits = amount * (_currentSlotEnd - block.timestamp / SECONDS_IN_AN_HOUR);
+    uint256 lostCredits = amount * remainingHoursInSlot;
     // Update user forcasted credits
     userDetailsTemp.forecastedCredits -= lostCredits;
     // update total forcasted credits
@@ -414,7 +424,7 @@ contract Distribution is Ownable, ReentrancyGuard {
     /// Deduct withdrawn amount from total amount.
     _totalAmount -= amount;
 
-    if(userDetailsTemp.forecastedCredits == 0 && userDetailsTemp.balance == 0){
+    if (userDetailsTemp.forecastedCredits == 0 && userDetailsTemp.balance == 0) {
       // remove the user since he no longer have any possesion in this platform
       _removeUser(sender);
     } else {
@@ -440,7 +450,6 @@ contract Distribution is Ownable, ReentrancyGuard {
    * @param account is the address of the user that needs to be removed
    */
   function _removeUser(address account) internal {
-
     // get the position of the account in the _userAddresses array
     uint256 accountPositionalValue = _isUser[account];
     // get the last element of the _userAddresses array
@@ -453,12 +462,21 @@ contract Distribution is Ownable, ReentrancyGuard {
 
     // remove the last account to avoid duplication
     _userAddresses.pop();
-    
+
     // remove the user account details
     delete _users[account];
     delete _isUser[account];
 
     emit UserRemoved(account);
+  }
+
+  /**
+   * @dev Check a user is registered or not.
+   * @param   userAccount The account address of the user
+   * @return  bool returns true is user registered
+   */
+  function isRegisteredUser(address userAccount) public view returns (bool) {
+    return _isUser[userAccount] > 0;
   }
 
   /**
@@ -469,7 +487,10 @@ contract Distribution is Ownable, ReentrancyGuard {
   function distribute(uint256 amount) external onlyOwner {
     require(amount > 0, 'LINGO: Amount cannot be zero');
     /// Check if the previous slot has expired before distributing tokens for the new slot.
-    require(_currentSlotEnd <= (block.timestamp / SECONDS_IN_AN_HOUR), 'LINGO: Current slot is active');
+    require(
+      _currentSlotEnd <= (block.timestamp / SECONDS_IN_AN_HOUR),
+      'LINGO: Current slot is active'
+    );
 
     uint256 allowance = _token.allowance(owner(), address(this));
     /// Ensure that the contract has sufficient token allowance from the owner.
@@ -518,12 +539,19 @@ contract Distribution is Ownable, ReentrancyGuard {
    * @notice User must be active, and cannot claim rewards before current slot has started.
    * @param  numberOfSlotsToClaim an unsigned integer represents the number slots to claim.
    */
-  function _claimRewards(uint256 numberOfSlotsToClaim) internal isUser isActive nonReentrant {
+  function _claimRewards(uint256 numberOfSlotsToClaim) internal isUser nonReentrant {
     address sender = msg.sender;
     User memory userDetailsTemp = _users[sender];
 
+    require(_distributionHistory.length > 0, 'LINGO: Distributions are not started');
+
     /// Ensure that the user has not already claimed rewards for the current slot.
-    require(_currentSlotStart > userDetailsTemp.lastClaimedTimestamp, 'LINGO: Already claimed');
+    require(
+      _currentSlotStart > userDetailsTemp.lastClaimedTimestamp ||
+      userDetailsTemp.lastClaimedSlot < _distributionHistory.length - 1 ||
+      ( userDetailsTemp.lastClaimedSlot == 0 && userDetailsTemp.lastClaimedTimestamp <_distributionHistory[0].endTime ),
+      'LINGO: Already claimed'
+    );
 
     uint256 totalClaim = 0;
     uint256 credits = 0;
@@ -540,7 +568,7 @@ contract Distribution is Ownable, ReentrancyGuard {
       if (
         _distributionHistory[_distributionHistory.length - 1].totalCredits > 0 &&
         _distributionHistory[_distributionHistory.length - 1].remainingTokensToClaim > 0
-        ) {
+      ) {
         credits = userDetailsTemp.forecastedCredits;
         claim =
           (credits * _distributionHistory[_distributionHistory.length - 1].monthlyProfit) /
@@ -553,13 +581,19 @@ contract Distribution is Ownable, ReentrancyGuard {
         userDetailsTemp.lastClaimedSlot = _distributionHistory.length - 1;
       }
     } else {
-      if((_distributionHistory.length - userDetailsTemp.lastClaimedSlot) < numberOfSlotsToClaim){
+      if ((_distributionHistory.length - userDetailsTemp.lastClaimedSlot) < numberOfSlotsToClaim) {
         range = _distributionHistory.length;
       } else {
         range = userDetailsTemp.lastClaimedSlot + numberOfSlotsToClaim;
       }
       //Calculate claim for all slots till last claimed timestamp by user.
-      for (uint256 i = userDetailsTemp.lastClaimedSlot; i < range; i++) {
+      for (
+        // If user wanted to start claiming from first slot then the the iterator should be zero
+        // since at that point lastclaimed slot have zero and adding plus 1 would skip the first slot
+        uint256 i = userDetailsTemp.lastClaimedSlot > 0 ? userDetailsTemp.lastClaimedSlot + 1 : 0;
+        i < range;
+        i++
+      ) {
         if (
           _distributionHistory[i].endTime >= userDetailsTemp.lastClaimedTimestamp &&
           _distributionHistory[i].totalCredits > 0 &&
@@ -583,7 +617,6 @@ contract Distribution is Ownable, ReentrancyGuard {
 
           /// Reduce remaining tokens in the distribution history for the corresponding claim.
           _distributionHistory[i].remainingTokensToClaim -= claim;
-
         }
       }
 
@@ -595,13 +628,21 @@ contract Distribution is Ownable, ReentrancyGuard {
     require(totalClaim > 0, 'LINGO: Zero rewards');
 
     /// Update user and global forecasted credits based on the current slot end time.
-    userDetailsTemp.forecastedCredits = userDetailsTemp.balance * (_currentSlotEnd - _currentSlotStart);
+    userDetailsTemp.forecastedCredits =
+      userDetailsTemp.balance *
+      (_currentSlotEnd - _currentSlotStart);
 
-    /// Update last claimed timestamp for the user.
-    userDetailsTemp.lastClaimedTimestamp = block.timestamp / SECONDS_IN_AN_HOUR;
+    if (userDetailsTemp.forecastedCredits == 0 && userDetailsTemp.balance == 0) {
+      // remove the user since he no longer have any possesion in this platform
+      _removeUser(sender);
+    } else {
 
-    // Store the updated user details in the mapping.
-    _users[sender] = userDetailsTemp;
+      // Update last claimed timestamp for the user.
+      userDetailsTemp.lastClaimedTimestamp = block.timestamp / SECONDS_IN_AN_HOUR;
+      
+      // Store the updated user details in the mapping.
+      _users[sender] = userDetailsTemp;
+    }
 
     /// Transfer tokens to the user account.
     _transferTokens(sender, totalClaim);
@@ -631,19 +672,24 @@ contract Distribution is Ownable, ReentrancyGuard {
    * There must be available tokens to claim.
    * @param numberOfSlotsToClaim an unsigned integer represents the number slots to claim.
    */
-  function _adminClaim(uint256 numberOfSlotsToClaim) internal onlyOwner takeEffectAdminClaimPeriod nonReentrant {
+  function _adminClaim(
+    uint256 numberOfSlotsToClaim
+  ) internal onlyOwner takeEffectAdminClaimPeriod nonReentrant {
     uint256 totalClaim = 0;
     uint256 range = 0;
 
-    if((_distributionHistory.length - _adminLastClaimedSlot) < numberOfSlotsToClaim){
-        range = _distributionHistory.length;
-      } else {
-        range = _adminLastClaimedSlot + numberOfSlotsToClaim;
-      }
+    if ((_distributionHistory.length - _adminLastClaimedSlot) < numberOfSlotsToClaim) {
+      range = _distributionHistory.length;
+    } else {
+      range = _adminLastClaimedSlot + numberOfSlotsToClaim;
+    }
 
     /// Calculates the total amount of tokens that can be claimed by the owner.
     for (uint256 i = _adminLastClaimedSlot; i < range; i++) {
-      if (((block.timestamp / SECONDS_IN_AN_HOUR) - _distributionHistory[i].endTime) >= _adminClaimPeriod) {
+      if (
+        ((block.timestamp / SECONDS_IN_AN_HOUR) - _distributionHistory[i].endTime) >=
+        _adminClaimPeriod
+      ) {
         totalClaim += _distributionHistory[i].remainingTokensToClaim;
         _distributionHistory[i].remainingTokensToClaim = 0;
       }
@@ -698,7 +744,7 @@ contract Distribution is Ownable, ReentrancyGuard {
    * @return An unsigned integer representing the number of hours after which unclaimed tokens can be claimed.
    */
   function getAdminClaimPeriod() external view returns (uint256) {
-    if(isNewAdminClaimPeriodTakeEffect()){
+    if (isNewAdminClaimPeriodTakeEffect()) {
       return _proposedAdminClaimPeriod;
     } else {
       return _adminClaimPeriod;
@@ -718,11 +764,11 @@ contract Distribution is Ownable, ReentrancyGuard {
    * @return  bool true if the time lock is over for the new proposed admin claim period to take effect.
    */
   function isNewAdminClaimPeriodTakeEffect() internal view returns (bool) {
-    return (
-      block.timestamp > (_adminClaimPeriodProposalStart + ADMIN_CLAIM_PERIOD_TAKE_EFFECT_TIME_WINDOW) && 
-      _proposedAdminClaimPeriod > 0
-    );
+    return (block.timestamp >
+      (_adminClaimPeriodProposalStart + ADMIN_CLAIM_PERIOD_TAKE_EFFECT_TIME_WINDOW) &&
+      _proposedAdminClaimPeriod > 0);
   }
+
   /**
    * @dev Returns the percentage fee charged on withdrawals from the contract.
    * @return An unsigned integer representing the percentage fee charged on withdrawals from the contract.
@@ -807,7 +853,7 @@ contract Distribution is Ownable, ReentrancyGuard {
    * @param to The Ethereum address of the account that will receive tokens from the contract.
    * @param amount An unsigned integer representing the amount of tokens to transfer to `to`.
    */
-  function _transferTokens(address to, uint256 amount) internal{
+  function _transferTokens(address to, uint256 amount) internal {
     _token.safeTransfer(to, amount);
   }
-} 
+}

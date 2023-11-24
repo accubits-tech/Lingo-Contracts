@@ -501,7 +501,7 @@ describe('Distribution Contract', () => {
         await distribute(distributionContract, token, distributionAmountBN);
   
         await expect(distributionContract.connect(user1).deposit(amountBN)).to.be.revertedWith(
-          'LINGO: User have unclaimed tokens. Please claim it before deposit or withdraw'
+          'LINGO: User have unclaimed tokens. Please claim it before deposit'
         );
       });
   
@@ -857,14 +857,64 @@ describe('Distribution Contract', () => {
         );
       });
   
-      it('Reverts when staking is not active', async () => {
+      it('User should be able to claim rewards and withdraw funds even if the slot time is over and the distribution is on hold', async () => {
         const amountBN = BN(100).mul(BN(10).pow(DECIMALS_BN));
         await deposit(distributionContract, token, user1, amountBN);
         await skipTime(BN(SLOT_BN).mul(BN(3600)).add(BN(3600)).toNumber());
-  
-        await expect(distributionContract.connect(user1).withdraw(amountBN)).to.be.revertedWith(
-          'LINGO: Distribution is on hold. Please contact admin'
-        );
+
+        const distributeAmount = BN(10000).mul(BN(10).pow(DECIMALS_BN));
+        await distribute(distributionContract, token, distributeAmount);
+
+        await skipTime(BN(SLOT_BN).mul(BN(3600)).add(BN(3600)).toNumber());
+
+        await distributionContract.connect(user1).claimRewards()
+        await distributionContract.connect(user1).withdraw(amountBN)
+
+        const balanceBeforeLastDistribution = await token.balanceOf(user1.address);
+
+        await distribute(distributionContract, token, distributeAmount);
+        await distributionContract.connect(user1).claimRewards()
+
+        const balanceAfterLastDistribution = await token.balanceOf(user1.address);
+
+        const rewardsClaimedAfterLastDistribution = BN(balanceAfterLastDistribution).sub(BN(balanceBeforeLastDistribution));
+        const expectedRewardAfterLastDistribution = await debitFee(token, distributeAmount);
+
+        expect(rewardsClaimedAfterLastDistribution).to.be.eq(expectedRewardAfterLastDistribution);
+        expect(await distributionContract.isRegisteredUser(user1.address)).to.be.false;
+      });
+
+      it('User should be able to deposit and register again after removed from platform', async () => {
+        const amountBN = BN(100).mul(BN(10).pow(DECIMALS_BN));
+        await deposit(distributionContract, token, user1, amountBN);
+        await skipTime(BN(SLOT_BN).mul(BN(3600)).add(BN(3600)).toNumber());
+
+        const distributeAmount = BN(10000).mul(BN(10).pow(DECIMALS_BN));
+        await distribute(distributionContract, token, distributeAmount);
+
+        await skipTime(BN(SLOT_BN).mul(BN(3600)).add(BN(3600)).toNumber());
+
+        await distributionContract.connect(user1).claimRewards()
+        await distributionContract.connect(user1).withdraw(amountBN)
+
+        await distribute(distributionContract, token, distributeAmount);
+        await distributionContract.connect(user1).claimRewards()
+
+        expect(await distributionContract.isRegisteredUser(user1.address)).to.be.false;
+
+        await deposit(distributionContract, token, user1, amountBN);
+        expect(await distributionContract.isRegisteredUser(user1.address)).to.be.true;
+
+        await skipTime(3600 * 2);
+
+        await distributionContract.connect(user1).withdraw(amountBN.div(2));
+
+        await skipTime(BN(SLOT_BN).mul(BN(3600)).toNumber());
+
+        await distributionContract.connect(user1).withdraw(amountBN.div(2));
+        await distribute(distributionContract, token, distributeAmount);
+        await distributionContract.connect(user1).claimRewards();
+        expect(await distributionContract.isRegisteredUser(user1.address)).to.be.false;
       });
   
       it('Reverts when user have unclaimed tokens', async () => {
@@ -875,7 +925,7 @@ describe('Distribution Contract', () => {
         await distribute(distributionContract, token, distributionAmountBN);
   
         await expect(distributionContract.connect(user1).withdraw(amountBN)).to.be.revertedWith(
-          'LINGO: User have unclaimed tokens. Please claim it before deposit or withdraw'
+          'LINGO: User have unclaimed tokens. Please claim it before deposit'
         );
       });
     });
@@ -1111,7 +1161,7 @@ describe('Distribution Contract', () => {
         expect(distributionHistory[2].remainingTokensToClaim.eq(distributeAmountBN)).is.true;
         
         await expect(distributionContract.connect(user1).withdraw(amountBN)).to.be.revertedWith(
-          'LINGO: User have unclaimed tokens. Please claim it before deposit or withdraw'
+          'LINGO: User have unclaimed tokens. Please claim it before deposit'
         );
 
       });
@@ -1146,7 +1196,7 @@ describe('Distribution Contract', () => {
         );
       });
   
-      it('Reverts when user tries to claim with no rewards', async () => {
+      it('Reverts when user tries to claim with no rewards or balance', async () => {
         const amountBN = BN(100).mul(BN(10).pow(DECIMALS_BN));
         await deposit(distributionContract, token, user1, amountBN);
   
@@ -1165,7 +1215,7 @@ describe('Distribution Contract', () => {
         await distribute(distributionContract, token, distributeAmountBN);
   
         await expect(distributionContract.connect(user1).claimRewards()).to.be.revertedWith(
-          'LINGO: Zero rewards'
+          'LINGO: Not an active user'
         );
       });
   
@@ -1180,14 +1230,17 @@ describe('Distribution Contract', () => {
         );
       });
   
-      it('Reverts when staking is not active', async () => {
+      it('User should be able to claim till the last distributed slot even if the current slot time is over and the distribution is on hold', async () => {
         const amountBN = BN(100).mul(BN(10).pow(DECIMALS_BN));
         await deposit(distributionContract, token, user1, amountBN);
         await skipTime(BN(SLOT_BN).mul(BN(3600)).add(BN(3600)).toNumber());
+
+        const distributeAmountBN = BN(10000).mul(BN(10).pow(DECIMALS_BN));
+        await distribute(distributionContract, token, distributeAmountBN);
+
+        await skipTime(BN(SLOT_BN).mul(BN(3600)).add(BN(3600)).toNumber());
   
-        await expect(distributionContract.connect(user1).claimRewards()).to.be.revertedWith(
-          'LINGO: Distribution is on hold. Please contact admin'
-        );
+        await distributionContract.connect(user1).claimRewards()
       });
   
       it('Rewards calculation should be consistant after multiple slots', async () => {
