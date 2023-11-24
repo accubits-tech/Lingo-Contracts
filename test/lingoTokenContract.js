@@ -376,34 +376,66 @@ describe('LINGO Token', () => {
 
     it('Owner can add accounts to both whitelists', async () => {
       expect(await token.isExternalWhiteListed(user1.address)).to.be.false;
-      await token.addToWhiteList(0, [user1.address]);
+      await token.addToWhiteList(false, [user1.address]);
       expect(await token.isExternalWhiteListed(user1.address)).to.be.true;
 
       expect(await token.isInternalWhiteListed(user1.address)).to.be.false;
-      await token.addToWhiteList(1, [user1.address]);
+      await token.addToWhiteList(true, [user1.address]);
       expect(await token.isInternalWhiteListed(user1.address)).to.be.true;
     });
 
     it('Owner can remove accounts from whitelists', async () => {
-      await token.addToWhiteList(0, [user1.address]);
+      await token.addToWhiteList(false, [user1.address]);
       expect(await token.isExternalWhiteListed(user1.address)).to.be.true;
-      await token.removeFromWhiteList(0, [user1.address]);
-      expect(await token.isExternalWhiteListed(user1.address)).to.be.false;
+      let addressList = await token.getWhitelistedAddresses();
+      expect(addressList.includes(user1.address)).to.be.true;
 
-      await token.addToWhiteList(1, [user1.address]);
+      await token.removeFromWhiteList(false, [user1.address]);
+      expect(await token.isExternalWhiteListed(user1.address)).to.be.false;
+      addressList = await token.getWhitelistedAddresses();
+      expect(addressList.includes(user1.address)).to.be.false;
+
+      await token.addToWhiteList(true, [user1.address]);
       expect(await token.isInternalWhiteListed(user1.address)).to.be.true;
-      await token.removeFromWhiteList(1, [user1.address]);
+      addressList = await token.getWhitelistedAddresses();
+      expect(addressList.includes(user1.address)).to.be.true;
+
+      await token.removeFromWhiteList(true, [user1.address]);
       expect(await token.isInternalWhiteListed(user1.address)).to.be.false;
+      addressList = await token.getWhitelistedAddresses();
+      expect(addressList.includes(user1.address)).to.be.false;
+
+    });
+
+    it('The address will be remove from the list only when both internal and external whitelising will be removed', async () => {
+      await token.addToWhiteList(false, [user1.address]);
+      await token.addToWhiteList(true, [user1.address]);
+      expect(await token.isExternalWhiteListed(user1.address)).to.be.true;
+      expect(await token.isInternalWhiteListed(user1.address)).to.be.true;
+
+      let addressList = await token.getWhitelistedAddresses();
+      expect(addressList.includes(user1.address)).to.be.true;
+
+      await token.removeFromWhiteList(false, [user1.address]);
+      expect(await token.isExternalWhiteListed(user1.address)).to.be.false;
+      addressList = await token.getWhitelistedAddresses();
+      expect(addressList.includes(user1.address)).to.be.true;
+
+      await token.removeFromWhiteList(true, [user1.address]);
+      expect(await token.isInternalWhiteListed(user1.address)).to.be.false;
+      addressList = await token.getWhitelistedAddresses();
+      expect(addressList.includes(user1.address)).to.be.false;
+
     });
 
     it('Returns proper removal status', async () => {
-      await token.addToWhiteList(0, [user1.address]);
+      await token.addToWhiteList(false, [user1.address]);
       expect(await token.isExternalWhiteListed(user1.address)).to.be.true;
       expect(await token.callStatic.removeFromWhiteList(0, [user1.address])).to.be.true;
       expect(await token.callStatic.removeFromWhiteList(0, [user2.address])).to.be.false;
       expect(await token.callStatic.removeFromWhiteList(0, [user1.address, user2.address])).to.be.false;
 
-      await token.addToWhiteList(1, [user1.address]);
+      await token.addToWhiteList(true, [user1.address]);
       expect(await token.isInternalWhiteListed(user1.address)).to.be.true;
       expect(await token.callStatic.removeFromWhiteList(1, [user1.address])).to.be.true;
       expect(await token.callStatic.removeFromWhiteList(1, [user2.address])).to.be.false;
@@ -412,25 +444,28 @@ describe('LINGO Token', () => {
 
     it('Users can check an account is whitelisted or not', async () => {
       expect(await token.isExternalWhiteListed(user1.address)).to.be.false;
-      await token.addToWhiteList(0, [user1.address]);
+      await token.addToWhiteList(false, [user1.address]);
       expect(await token.isExternalWhiteListed(user1.address)).to.be.true;
 
       expect(await token.isInternalWhiteListed(user1.address)).to.be.false;
-      await token.addToWhiteList(1, [user1.address]);
+      await token.addToWhiteList(true, [user1.address]);
       expect(await token.isInternalWhiteListed(user1.address)).to.be.true;
     });
 
     it('Users can read whitelisted accounts', async () => {
       expect(await token.isExternalWhiteListed(user1.address)).to.be.false;
-      await token.addToWhiteList(0, [user1.address]);
-      const externalWhiteList = await token.getExternalWhitelistedAddresses();
-      expect(_.isEqual(externalWhiteList, [user1.address])).to.be.true;
+      await token.addToWhiteList(false, [user1.address]);
+
+      expect(await token.isExternalWhiteListed(user1.address)).to.be.true;
 
       expect(await token.isInternalWhiteListed(user1.address)).to.be.false;
-      await token.addToWhiteList(1, [user1.address]);
-      const internalWhiteList = await token.getInternalWhitelistedAddresses();
+      await token.addToWhiteList(true, [user1.address]);
+
+      expect(await token.isInternalWhiteListed(user1.address)).to.be.true;
+
+      const whitelistedAddresses = await token.getWhitelistedAddresses();
       expect(
-        _.isEqual(internalWhiteList, [
+        _.isEqual(whitelistedAddresses, [
           owner.address,
           token.address,
           treasuryWallet.address,
@@ -464,7 +499,7 @@ describe('LINGO Token', () => {
     it('Fee is not debited if token transferred to an external whitelisted account', async () => {
       const amountToSendBN = BN(10).mul(BN(10).pow(DECIMALS_BN));
 
-      await token.addToWhiteList(0, [user2.address]);
+      await token.addToWhiteList(false, [user2.address]);
       expect(await token.isInternalWhiteListed(user1.address)).to.be.false;
       expect(await token.isInternalWhiteListed(user2.address)).to.be.false;
       expect(await token.isExternalWhiteListed(user1.address)).to.be.false;
@@ -482,7 +517,7 @@ describe('LINGO Token', () => {
     it('Fee is debited if token transferred from an external whitelisted account', async () => {
       const amountToSendBN = BN(10).mul(BN(10).pow(DECIMALS_BN));
 
-      await token.addToWhiteList(0, [user1.address]);
+      await token.addToWhiteList(false, [user1.address]);
       expect(await token.isInternalWhiteListed(user1.address)).to.be.false;
       expect(await token.isInternalWhiteListed(user2.address)).to.be.false;
       expect(await token.isExternalWhiteListed(user1.address)).to.be.true;

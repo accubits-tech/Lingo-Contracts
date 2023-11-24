@@ -12,14 +12,6 @@ import '@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol';
  * @dev Implements a custom ERC20 token.
  */
 contract LINGO is ERC20Burnable, Ownable {
-  /**
-   * @title  WhiteList Types
-   * @notice This enum specifies the types of whitelists available - external or internal.
-   */
-  enum WhiteListTypes {
-    EXTERNAL_WHITELISTED,
-    INTERNAL_WHITELISTED
-  }
 
   // Constants
 
@@ -29,7 +21,6 @@ contract LINGO is ERC20Burnable, Ownable {
   // Divisor for percentage calculation (10000 represents two decimal places)
   uint256 private constant PERCENTAGE_DIVISOR = 10000;
 
-
   /// This is an unsigned integer that represents the transfer fee percentage
   /// Eg: 5% will be represented as 500
   uint256 private _transferFee;
@@ -37,17 +28,11 @@ contract LINGO is ERC20Burnable, Ownable {
   /// This is an address variable that will hold the treasury wallet's address
   address private _treasuryWallet;
 
-  /// This creates a mapping between external addresses and a boolean value indicating if they're whitelisted
-  mapping(address => uint256) private _isExternalWhiteListed;
+  // An 'address - white list type' combination of inputs provides a positional value (index + 1) which points to the location to the address list, 0 if not whitelisted
+  mapping(address => mapping(bool => uint256)) private _isAddressWhiteListed;
 
-  /// This creates a mapping between internal addresses and a boolean value indicating if they're whitelisted
-  mapping(address => uint256) private _isInternalWhiteListed;
-
-  /// This is an array that stores all external white listed addresses
-  address[] private _externalWhitelistedAddresses;
-
-  /// This is an array that stores all internal white listed addresses
-  address[] private _internalWhitelistedAddresses;
+  // the list of white listed addresses
+  address[] private _whitelistedAddresses;
 
   /**
    * @dev Emitted when the Treasury wallet is updated
@@ -57,11 +42,11 @@ contract LINGO is ERC20Burnable, Ownable {
 
   /**
    * @dev Emitted when the whitelist is updated
-   * @param whiteListType A variable of type `WhiteListTypes` indicating external or internal whitelists.
+   * @param isInternal Is a boolean type denote internal type if true and external otherwise
    * @param added The boolean value for whether an address has been added to the whitelisted addresses or removed..
    * @param members An array of addresses representing the members being added or removed from the list.
    */
-  event WhiteListUpdated(WhiteListTypes whiteListType, bool added, address[] members);
+  event WhiteListUpdated(bool isInternal, bool added, address[] members);
 
   /**
    * @dev Event emitted when the transfer fee is updated
@@ -140,19 +125,14 @@ contract LINGO is ERC20Burnable, Ownable {
 
   /**
    * @dev Removes one or more addresses from a specific whitelist
-   * @param whiteListType The type of whitelist to remove from
+   * @param isInternal The type of whitelist to remove from True if internal False if external
    * @param users An array of addresses to remove from the whitelist
    */
   function removeFromWhiteList(
-    WhiteListTypes whiteListType,
+    bool isInternal,
     address[] memory users
-  ) external onlyOwner returns (bool isUserRemoved){
-
-    if (whiteListType == WhiteListTypes.EXTERNAL_WHITELISTED) {
-      isUserRemoved = _removeFromExternalWhiteList(users);
-    } else if (whiteListType == WhiteListTypes.INTERNAL_WHITELISTED) {
-      isUserRemoved =  _removeFromInternalWhiteList(users);
-    }
+  ) external onlyOwner returns (bool isUserRemoved) {
+    isUserRemoved = _removeFromWhiteList(isInternal, users);
   }
 
   /**
@@ -177,8 +157,8 @@ contract LINGO is ERC20Burnable, Ownable {
    * @param account The wallet address to be checked in the white-list.
    * @return bool `true` if the account is white-listed, `false` otherwise.
    */
-  function isExternalWhiteListed(address account) external view returns (bool) {
-    return _isExternalWhiteListed[account] > 0;
+  function isExternalWhiteListed(address account) public view returns (bool) {
+    return _isAddressWhiteListed[account][false] > 0;
   }
 
   /**
@@ -186,8 +166,8 @@ contract LINGO is ERC20Burnable, Ownable {
    * @param account The wallet address to be checked in the white-list.
    * @return bool `true` if the account is white-listed, `false` otherwise.
    */
-  function isInternalWhiteListed(address account) external view returns (bool) {
-    return _isInternalWhiteListed[account] > 0;
+  function isInternalWhiteListed(address account) public view returns (bool) {
+    return _isAddressWhiteListed[account][true] > 0;
   }
 
   /**
@@ -200,19 +180,11 @@ contract LINGO is ERC20Burnable, Ownable {
   }
 
   /**
-   * @dev Returns an array of addresses that are whitelisted for external users.
+   * @dev Returns an array of whitelisted addresses.
    * @return address[] memory An array of whitelisted addresses.
    */
-  function getExternalWhitelistedAddresses() external view returns (address[] memory) {
-    return _externalWhitelistedAddresses;
-  }
-
-  /**
-   * @dev Returns an array of addresses that are whitelisted for internal users.
-   * @return address[] memory An array of whitelisted addresses.
-   */
-  function getInternalWhitelistedAddresses() external view returns (address[] memory) {
-    return _internalWhitelistedAddresses;
+  function getWhitelistedAddresses() external view returns (address[] memory) {
+    return _whitelistedAddresses;
   }
 
   /**
@@ -272,30 +244,24 @@ contract LINGO is ERC20Burnable, Ownable {
 
   /**
    * @dev Adds addresses to the specified whitelist.
-   * @param whiteListType The type of the whitelist (external or internal).
+   * @param isInternal The type of whitelist to remove from True if internal False if external
    * @param users The addresses to be added.
    */
-  function addToWhiteList(WhiteListTypes whiteListType, address[] memory users) public onlyOwner {
-    if (whiteListType == WhiteListTypes.EXTERNAL_WHITELISTED) {
-      for (uint i = 0; i < users.length; i++) {
-        /// Check if address is already whitelisted
-        if (_isExternalWhiteListed[users[i]] > 0) continue;
+  function addToWhiteList(bool isInternal, address[] memory users) public onlyOwner {
+    for (uint i = 0; i < users.length; i++) {
+      /// Check if address is already whitelisted
+      if (_isAddressWhiteListed[users[i]][isInternal] > 0) continue;
 
-        /// If not, add it to external whitelist and mark as true
-        _externalWhitelistedAddresses.push(users[i]);
-        _isExternalWhiteListed[users[i]] = _externalWhitelistedAddresses.length;
+      // checks the other type alresy exists then only assign the same positional value to the given type
+      if (
+          _isAddressWhiteListed[users[i]][!isInternal] > 0
+      ) {
+        _isAddressWhiteListed[users[i]][isInternal] = _isAddressWhiteListed[users[i]][!isInternal];
+      } else {
+        /// If not, add it to the whitelist and mark as true
+        _whitelistedAddresses.push(users[i]);
+        _isAddressWhiteListed[users[i]][isInternal] = _whitelistedAddresses.length;
       }
-      emit WhiteListUpdated(whiteListType, true, users);
-    } else if (whiteListType == WhiteListTypes.INTERNAL_WHITELISTED) {
-      for (uint i = 0; i < users.length; i++) {
-        /// Check if address is already whitelisted
-        if (_isInternalWhiteListed[users[i]] > 0) continue;
-
-        /// If not, add it to internal whitelist and mark as true
-        _internalWhitelistedAddresses.push(users[i]);
-        _isInternalWhiteListed[users[i]] = _internalWhitelistedAddresses.length;
-      }
-      emit WhiteListUpdated(whiteListType, true, users);
     }
   }
 
@@ -305,62 +271,43 @@ contract LINGO is ERC20Burnable, Ownable {
    *
    * @param users Array of addresses to remove from the whitelist
    */
-  function _removeFromInternalWhiteList(address[] memory users) internal onlyOwner returns(bool){
+  function _removeFromWhiteList(
+    bool isInternal,
+    address[] memory users
+  ) internal returns (bool) {
     bool isRemoved = true;
     for (uint i = 0; i < users.length; i++) {
       /// Check if the address is present in the whitelist
 
-      uint256 addressPositionalValue = _isInternalWhiteListed[users[i]];
+      uint256 addressPositionalValue = _isAddressWhiteListed[users[i]][isInternal];
       if (!(addressPositionalValue > 0)) {
         isRemoved = false;
         continue;
       }
 
-      if(_internalWhitelistedAddresses.length > 1){
-        address lastAddress = _internalWhitelistedAddresses[_internalWhitelistedAddresses.length - 1];
-        /// Swap the removed address with the last address in the array and pop it off
-        _internalWhitelistedAddresses[addressPositionalValue - 1] = lastAddress;
-        _isInternalWhiteListed[lastAddress] = addressPositionalValue;
+      uint256 addressPositionalValueOtherType = _isAddressWhiteListed[users[i]][!isInternal];
+
+      // Check if the address is present in the whitelist in the other type
+      // if not then the address removed from the whitlisted addresses
+      if(addressPositionalValueOtherType == 0){
+        if (_whitelistedAddresses.length > 1) {
+          address lastAddress = _whitelistedAddresses[_whitelistedAddresses.length - 1];
+          /// Swap the removed address with the last address in the array and pop it off
+          _whitelistedAddresses[addressPositionalValue - 1] = lastAddress;
+    
+          if(_isAddressWhiteListed[lastAddress][isInternal] > 0) 
+            _isAddressWhiteListed[lastAddress][isInternal] = addressPositionalValue;
+          if(_isAddressWhiteListed[lastAddress][!isInternal] > 0) 
+            _isAddressWhiteListed[lastAddress][!isInternal] = addressPositionalValue;
+        }
+        _whitelistedAddresses.pop();
       }
-      
-      _isInternalWhiteListed[users[i]] = 0;
-      _internalWhitelistedAddresses.pop();
+
+      _isAddressWhiteListed[users[i]][isInternal] = 0;
     }
-      if (isRemoved) emit WhiteListUpdated(WhiteListTypes.INTERNAL_WHITELISTED, false, users);
-      return isRemoved;
-  }
-
-  /**
-   * @dev Removes one or multiple users from the external whitelist.
-   * Only the contract owner can call this function.
-   *
-   * @param users Array of addresses to remove from the whitelist
-   */
-  function _removeFromExternalWhiteList(address[] memory users) internal onlyOwner returns(bool){
-    bool isRemoved = true;
-    for (uint i = 0; i < users.length; i++) {
-
-      uint256 addressPositionalValue = _isExternalWhiteListed[users[i]];
-      /// Check if the address is present in the whitelist
-      if (!(addressPositionalValue > 0)) {
-        isRemoved = false;
-        continue;
-      }
-
-      if(_externalWhitelistedAddresses.length > 1){
-        address lastAddress = _externalWhitelistedAddresses[_externalWhitelistedAddresses.length - 1];
-        /// Swap the removed address with the last address in the array and pop it off
-        _externalWhitelistedAddresses[addressPositionalValue - 1] = lastAddress;
-        _isExternalWhiteListed[lastAddress] = addressPositionalValue;
-      }
-      
-      _isExternalWhiteListed[users[i]] = 0;
-      _externalWhitelistedAddresses.pop();
-    }
-    if (isRemoved) emit WhiteListUpdated(WhiteListTypes.EXTERNAL_WHITELISTED, false, users);
+    if (isRemoved) emit WhiteListUpdated(isInternal, false, users);
     return isRemoved;
   }
-
 
   /**
    * @dev This function sets the default whitelist that contains three addresses: owner, contract address and treasury wallet.
@@ -372,7 +319,7 @@ contract LINGO is ERC20Burnable, Ownable {
     defaultWhiteListedAddresses[1] = address(this);
     defaultWhiteListedAddresses[2] = _treasuryWallet;
 
-    addToWhiteList(WhiteListTypes.INTERNAL_WHITELISTED, defaultWhiteListedAddresses);
+    addToWhiteList(true, defaultWhiteListedAddresses);
   }
 
   /**
@@ -382,9 +329,7 @@ contract LINGO is ERC20Burnable, Ownable {
    * @return bool True if fee is required, false otherwise.
    */
   function _isFeeRequired(address from, address to) internal view returns (bool) {
-    if (
-      !(_isInternalWhiteListed[from] > 0) && !(_isInternalWhiteListed[to] > 0) && !(_isExternalWhiteListed[to] > 0)
-    ) {
+    if (!isInternalWhiteListed(from) && !isInternalWhiteListed(to) && !isExternalWhiteListed(to)) {
       return true;
     }
     return false;
