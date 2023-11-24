@@ -15,6 +15,9 @@ contract LINGO is ERC20Burnable, Ownable {
 
   // Constants
 
+  // The max supply of token ever available in circulation
+  uint256 private constant MAX_SUPPLY = 1_000_000_000 * (10 ** 18);
+
   // Representing 5% as 500
   uint256 private constant FIVE_PERCENT = 500;
 
@@ -58,7 +61,7 @@ contract LINGO is ERC20Burnable, Ownable {
    * @dev Constructor function to initialize values when the contract is created.
    * @param name_ A string representing the name of the token.
    * @param symbol_ A string representing the symbol of the token.
-   * @param totalSupply_ An unsigned integer representing the initial total supply of tokens for the contract.
+   * @param initialSupply An unsigned integer representing the initial total supply of tokens for the contract.
    * @param owner_ An address representing the owner of the contract.
    * @param treasuryAddress_ An address representing the treasury wallet address.
    * @param txnFee_ An unsigned integer representing the percentage transfer fee associated with each token transfer.
@@ -66,7 +69,7 @@ contract LINGO is ERC20Burnable, Ownable {
   constructor(
     string memory name_,
     string memory symbol_,
-    uint256 totalSupply_,
+    uint256 initialSupply,
     address owner_,
     address treasuryAddress_,
     uint256 txnFee_
@@ -85,7 +88,7 @@ contract LINGO is ERC20Burnable, Ownable {
      * which can be specified by adding a 'decimals' variable to the contract.
      * Finally, the tokens are minted and assigned to the contract owner's address.
      */
-    uint256 intialTokenSupply = totalSupply_ * (10 ** decimals());
+    uint256 intialTokenSupply = initialSupply * (10 ** decimals());
     _mint(owner_, intialTokenSupply);
 
     /**
@@ -136,11 +139,12 @@ contract LINGO is ERC20Burnable, Ownable {
   }
 
   /**
-   * @dev Mint new tokens.
+   * @dev Can mint new tokens upto the max supply limit.
    * @param to The address to mint the tokens to.
    * @param amount The amount of tokens to mint.
    */
   function mint(address to, uint256 amount) external onlyOwner {
+    require(totalSupply() + amount <= MAX_SUPPLY, "LINGO: cap exceeded");
     _mint(to, amount);
   }
 
