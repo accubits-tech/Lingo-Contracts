@@ -221,16 +221,29 @@ describe('LINGO Token', () => {
   });
 
   describe('Mint', () => {
-    it('Owner can mint tokens', async () => {
+    it('Owner can mint tokens upto the max supply', async () => {
+      const amountToBurnBN = BN(1000).mul(BN(10).pow(DECIMALS_BN));
+      await token.burn(amountToBurnBN);
+
       const amountToMintBN = BN(500).mul(BN(10).pow(DECIMALS_BN));
-      const ownerInitBalanceBN = await token.balanceOf(owner.address);
+      const ownerBalanceBeforeMintBN = await token.balanceOf(owner.address);
 
       await token.mint(owner.address, amountToMintBN);
-      expect((await token.balanceOf(owner.address)).eq(ownerInitBalanceBN.add(amountToMintBN))).is
+      expect((await token.balanceOf(owner.address)).eq(ownerBalanceBeforeMintBN.add(amountToMintBN))).is
         .true;
     });
 
+    it('Reverts if try to mint over max supply', async () => {
+      const amountToMintBN = BN(500).mul(BN(10).pow(DECIMALS_BN));
+      await expect(token.mint(owner.address, amountToMintBN)).to.be.revertedWith(
+        'LINGO: cap exceeded'
+      );
+    });
+
     it('Reverts when non owner tries to mint tokens', async () => {
+      const amountToBurnBN = BN(1000).mul(BN(10).pow(DECIMALS_BN));
+      await token.burn(amountToBurnBN);
+
       const amountToMintBN = BN(500).mul(BN(10).pow(DECIMALS_BN));
       await expect(token.connect(user1).mint(owner.address, amountToMintBN)).to.be.revertedWith(
         'Ownable: caller is not the owner'
